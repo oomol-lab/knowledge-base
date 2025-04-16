@@ -15,7 +15,7 @@ class ResourceModel:
     self._ctx: ModuleContext = modules_context
 
   def create_resource_base(self, session: ConnSession, module: Module, meta: Any) -> ResourceBase:
-    cursor, conn = session
+    cursor, _ = session
     meta_text = json.dumps(meta)
     module_id = self._ctx.model_id(module)
     created_at = int(time.time() * 1000)
@@ -23,7 +23,6 @@ class ResourceModel:
       "INSERT INTO bases (model, meta, created_at, created_at) VALUES (?, ?, ?, ?)",
       parameters=(module_id, meta_text, created_at, created_at),
     )
-    conn.commit()
     base_id = cursor.lastrowid
     return ResourceBase(
       id=base_id,
@@ -118,7 +117,7 @@ class ResourceModel:
         updated_at: int,
       ) -> Resource:
 
-    cursor, conn = session
+    cursor, _ = session
     meta_text = json.dumps(meta)
     cursor.execute(
       "INSERT INTO resources (hash, base, content_type, meta, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -130,7 +129,6 @@ class ResourceModel:
         updated_at,
       ),
     )
-    conn.commit()
     resource_id = cursor.lastrowid
     return Resource(
       id=resource_id,
@@ -151,7 +149,7 @@ class ResourceModel:
         updated_at: int | None = None,
       ) -> Resource:
 
-    cursor, conn = session
+    cursor, _ = session
     origin_resource = self.get_resource(session, resource_id)
 
     if hash is None:
@@ -173,16 +171,14 @@ class ResourceModel:
         resource_id,
       ),
     )
-    conn.commit()
     return origin_resource
 
   def remove_resource(self, session: ConnSession, resource_id: int) -> None:
-    cursor, conn = session
+    cursor, _ = session
     cursor.execute(
       "DELETE FROM resources WHERE id = ?",
       parameters=(resource_id,),
     )
-    conn.commit()
 
 def _create_tables(cursor: Cursor):
   cursor.execute("""

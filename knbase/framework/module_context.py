@@ -25,7 +25,7 @@ class ModuleContext:
     return self._model2id[module.id]
 
   def _bind_modules(self, session: ConnSession, iter_modules: Iterable[Module]):
-    cursor, conn = session
+    cursor, _ = session
     modules: dict[int, Module] = {}
     model2id: dict[str, int] = {}
 
@@ -61,7 +61,6 @@ class ModuleContext:
           "INSERT INTO modules (step, class_id) VALUES (?, ?)",
           (step.value, class_id),
         )
-        conn.commit()
         id = cursor.lastrowid
 
       modules[id] = module
