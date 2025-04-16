@@ -2,6 +2,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 
+from pathlib import Path
 from .format import get_format
 from .session import get_thread_pool, SQLite3ConnectionSession
 
@@ -9,11 +10,11 @@ from .session import get_thread_pool, SQLite3ConnectionSession
 _LOCK = threading.Lock()
 
 class SQLite3Pool:
-  def __init__(self, format_name: str, path: str) -> None:
+  def __init__(self, format_name: str, path: Path) -> None:
     with _LOCK:
       get_format(format_name).create_tables(path)
     self._format_name: str = format_name
-    self._path: str = path
+    self._path: Path = path
 
   def assert_format(self, format_name) -> SQLite3Pool:
     if format_name != self._format_name:
@@ -45,7 +46,7 @@ class SQLite3Pool:
       conn.close()
 
   @property
-  def path(self) -> str:
+  def path(self) -> Path:
     return self._path
 
   @property

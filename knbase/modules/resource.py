@@ -10,13 +10,14 @@ from .types import Updating
 @dataclass
 class Resource:
   id: int
-  module: ResourceModule
+  hash: bytes
   base: ResourceBase
   content_type: str
   meta: Any
+  updated_at: int
 
   def open(self) -> BufferedReader:
-    return self.module.open(self)
+    return self.base.module.open(self)
 
 @dataclass
 class ResourceBase:
@@ -35,7 +36,7 @@ class ResourceEvent:
   hash: bytes
 
   def complete(self) -> None:
-    self.resource.module.complete_event(self)
+    self.resource.base.module.complete_event(self)
 
 class ResourceModule(Module):
   @abstractmethod
