@@ -20,7 +20,7 @@ class ResourceModel:
     created_at = int(time.time() * 1000)
     cursor.execute(
       "INSERT INTO bases (model, meta, created_at, created_at) VALUES (?, ?, ?, ?)",
-      parameters=(module_id, meta_text, created_at, created_at),
+      (module_id, meta_text, created_at, created_at),
     )
     base_id = cursor.lastrowid
     return ResourceBase(
@@ -32,7 +32,7 @@ class ResourceModel:
   def get_resource_base(self, cursor: Cursor, base_id: int) -> ResourceBase:
     cursor.execute(
       "SELECT model, meta FROM bases WHERE id = ?",
-      parameters=(base_id,),
+      (base_id,),
     )
     row = cursor.fetchone()
     if row is None:
@@ -49,7 +49,7 @@ class ResourceModel:
   def get_resource(self, cursor: Cursor, resource_id: int) -> Resource:
     cursor.execute(
       "SELECT hash, base, content_type, meta, updated_at FROM resources WHERE id = ?",
-      parameters=(resource_id,),
+      (resource_id,),
     )
     row = cursor.fetchone()
     if row is None:
@@ -73,7 +73,7 @@ class ResourceModel:
     ) -> int:
     cursor.execute(
       "SELECT COUNT(*) FROM resources WHERE base = ? AND hash = ?",
-      parameters=(resource_base.id, hash),
+      (resource_base.id, hash),
     )
     row = cursor.fetchone()
     if row is None:
@@ -88,8 +88,8 @@ class ResourceModel:
       ) -> Generator[Resource, None, None]:
 
     cursor.execute(
-      "SELECT id, content_type, meta, updated_at FROM resources WHERE base = ? AND hash = ?",
-      parameters=(resource_base.id, hash),
+      "SELECT id, content_type, meta, updated_at FROM resources WHERE base = ? AND hash = ? ORDER BY updated_at DESC",
+      (resource_base.id, hash),
     )
     for row in cursor.fetchall():
       resource_id, content_type, meta_text, updated_at = row
@@ -115,7 +115,7 @@ class ResourceModel:
     meta_text = json.dumps(meta)
     cursor.execute(
       "INSERT INTO resources (hash, base, content_type, meta, updated_at) VALUES (?, ?, ?, ?, ?)",
-      parameters=(
+      (
         hash,
         resource_base.id,
         content_type,
@@ -156,7 +156,7 @@ class ResourceModel:
 
     cursor.execute(
       "UPDATE resources SET hash = ?, content_type = ?, meta = ?, updated_at = ? WHERE id = ?",
-      parameters=(
+      (
         hash,
         content_type,
         json.dumps(meta),
@@ -169,7 +169,7 @@ class ResourceModel:
   def remove_resource(self, cursor: Cursor, resource_id: int) -> None:
     cursor.execute(
       "DELETE FROM resources WHERE id = ?",
-      parameters=(resource_id,),
+      (resource_id,),
     )
 
 def _create_tables(cursor: Cursor):
@@ -179,7 +179,7 @@ def _create_tables(cursor: Cursor):
       model INTEGER NOT NULL,
       meta TEXT NOT NULL,
       created_at INTEGER,
-      updated_at INTEGER,
+      updated_at INTEGER
     )
   """)
 
@@ -190,7 +190,7 @@ def _create_tables(cursor: Cursor):
       base INTEGER NOT NULL,
       content_type TEXT NOT NULL,
       meta TEXT NOT NULL,
-      updated_at INTEGER,
+      updated_at INTEGER
     )
   """)
 

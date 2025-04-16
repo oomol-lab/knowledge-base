@@ -78,7 +78,7 @@ class DocumentModel:
 
     cursor.execute(
       "SELECT id, path, res_hash, meta FROM documents WHERE res_hash = ? AND preproc_module = ?",
-      parameters=(resource_hash, self._ctx.model_id(preprocessing_module)),
+      (resource_hash, self._ctx.model_id(preprocessing_module)),
     )
     for row in fetchmany(cursor, _CHUNK_SIZE):
       document_id, path, res_hash, meta_text = row
@@ -112,7 +112,7 @@ class DocumentModel:
         """.format(
           ", ".join("?" for _ in unexpected_tasks_ids)
         ),
-        parameters=unexpected_tasks_ids,
+        unexpected_tasks_ids,
       )
     row = cursor.fetchone()
     if row is None:
@@ -142,7 +142,7 @@ class DocumentModel:
     for field in ("res_hash", "from_res_hash"):
       cursor.execute(
         "SELECT id, event, res_path, res_hash, res_model, from_res_hash, step, created_at FROM tasks WHERE {} = ?".format(field),
-        parameters=(resource_hash,),
+        (resource_hash,),
       )
       for row in fetchmany(cursor, _CHUNK_SIZE):
         task_id, event_id, resource_path, resource_hash, resource_model, from_res_hash, step, created_at = row
@@ -173,7 +173,7 @@ class DocumentModel:
     created_at = int(time() * 1000)
     cursor.execute(
       "INSERT INTO tasks (event, res_path, res_hash, res_model, from_res_hash, step, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      parameters=(
+      (
         event_id,
         str(resource_path),
         resource_hash,
@@ -200,7 +200,7 @@ class DocumentModel:
   def remove_task(self, cursor: Cursor, task: Task) -> None:
     cursor.execute(
       "DELETE FROM tasks WHERE id = ?",
-      parameters=(task.id,),
+      (task.id,),
     )
 
   def go_to_remove(
@@ -216,14 +216,14 @@ class DocumentModel:
     index_tasks: list[IndexTask] = []
     cursor.execute(
       "SELECT id FROM documents WHERE res_hash = ?",
-      parameters=(origin.resource_hash,),
+      (origin.resource_hash,),
     )
     for row in fetchmany(cursor, _CHUNK_SIZE):
       document_id = row[0]
       for index_module in index_modules:
         cursor.execute(
           "INSERT INTO index_tasks (parent, document, operation, index_module, created_at) VALUES (?, ?, ?, ?, ?)",
-          parameters=(
+          (
             origin.id,
             document_id,
             IndexTaskOperation.REMOVE.value,
@@ -242,7 +242,7 @@ class DocumentModel:
         )
     cursor.execute(
       "UPDATE tasks SET step = ? WHERE id = ?",
-      parameters=(
+      (
         TaskStep.PROCESSING.value,
         origin.id,
       ),
@@ -275,7 +275,7 @@ class DocumentModel:
       module_id = self._ctx.model_id(module)
       cursor.execute(
         "INSERT INTO preproc_tasks (parent, preproc_module, created_at) VALUES (?, ?, ?)",
-        parameters=(
+        (
           origin.id,
           module_id,
           created_at,
@@ -291,7 +291,7 @@ class DocumentModel:
       )
     cursor.execute(
       "UPDATE tasks SET step = ? WHERE id = ?",
-      parameters=(
+      (
         TaskStep.PROCESSING.value,
         origin.id,
       ),
@@ -390,7 +390,7 @@ class DocumentModel:
           "REMOVE FROM index_tasks WHERE id IN ({})".format(
             ", ".join("?" for _ in chunk_task_ids)
           ),
-          parameters=chunk_task_ids,
+          chunk_task_ids,
         )
 
     preprocess_tasks_count = self._sub_tasks_count(cursor, "preproc_tasks", origin)
@@ -414,7 +414,7 @@ class DocumentModel:
       task.step = TaskStep.COMPLETED
       cursor.execute(
         "REMOVE FROM tasks WHERE id = ?",
-        parameters=(origin.id,),
+        (origin.id,),
       )
 
     return task
@@ -434,7 +434,7 @@ class DocumentModel:
     for document_params in added_documents:
       cursor.execute(
         "INSERT INTO documents (path, res_hash, preproc_module, meta) VALUES (?, ?, ?, ?)",
-        parameters=(
+        (
           str(document_params.path),
           origin.resource_hash,
           preprocessing_module_id,
@@ -445,7 +445,7 @@ class DocumentModel:
       for index_module in index_modules:
         cursor.execute(
           "INSERT INTO index_tasks (parent, document, operation, index_module, created_at) VALUES (?, ?, ?, ?, ?)",
-          parameters=(
+          (
             origin.id,
             document_id,
             IndexTaskOperation.CREATE.value,
@@ -476,7 +476,7 @@ class DocumentModel:
       for index_module in index_modules:
         cursor.execute(
           "INSERT INTO index_tasks (parent, document, operation, index_module, created_at) VALUES (?, ?, ?, ?, ?)",
-          parameters=(
+          (
             origin.id,
             removed_document_id,
             IndexTaskOperation.REMOVE.value,
@@ -496,13 +496,13 @@ class DocumentModel:
     for removed_document_id in removed_document_ids:
       cursor.execute(
         "DELETE FROM documents WHERE id = ?",
-        parameters=(removed_document_id,),
+        (removed_document_id,),
       )
 
   def _sub_tasks_count(self, cursor: Cursor, table_name: str, parent: Task):
     cursor.execute(
       f"SELECT count(*) FROM {table_name} WHERE parent = ?",
-      parameters=(parent.id,),
+      (parent.id,),
     )
     row = cursor.fetchone()
     if row is None:

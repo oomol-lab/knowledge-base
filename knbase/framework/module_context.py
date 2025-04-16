@@ -72,7 +72,7 @@ def _create_tables(cursor: Cursor):
     CREATE TABLE modules (
       id INTEGER PRIMARY KEY,
       step INTEGER NOT NULL,
-      class_id TEXT NOT NULL,
+      class_id TEXT NOT NULL
     )
   """)
 
