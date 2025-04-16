@@ -4,7 +4,7 @@ import time
 from typing import Any, Generator
 from sqlite3 import Cursor
 
-from .common import FRAMEWORK_DB, ConnSession
+from .common import FRAMEWORK_DB
 from .module_context import ModuleContext
 from ..sqlite3_pool import register_table_creators
 from ..modules import Module, Resource, ResourceBase
@@ -14,8 +14,7 @@ class ResourceModel:
   def __init__(self, modules_context: ModuleContext):
     self._ctx: ModuleContext = modules_context
 
-  def create_resource_base(self, session: ConnSession, module: Module, meta: Any) -> ResourceBase:
-    cursor, _ = session
+  def create_resource_base(self, cursor: Cursor, module: Module, meta: Any) -> ResourceBase:
     meta_text = json.dumps(meta)
     module_id = self._ctx.model_id(module)
     created_at = int(time.time() * 1000)
@@ -30,8 +29,7 @@ class ResourceModel:
       meta=meta,
     )
 
-  def get_resource_base(self, session: ConnSession, base_id: int) -> ResourceBase:
-    cursor, _ = session
+  def get_resource_base(self, cursor: Cursor, base_id: int) -> ResourceBase:
     cursor.execute(
       "SELECT model, meta FROM bases WHERE id = ?",
       parameters=(base_id,),
@@ -48,8 +46,7 @@ class ResourceModel:
       meta=json.loads(meta_text),
     )
 
-  def get_resource(self, session: ConnSession, resource_id: int) -> Resource:
-    cursor, _ = session
+  def get_resource(self, cursor: Cursor, resource_id: int) -> Resource:
     cursor.execute(
       "SELECT hash, base, content_type, meta, updated_at FROM resources WHERE id = ?",
       parameters=(resource_id,),
@@ -62,7 +59,7 @@ class ResourceModel:
     return Resource(
       id=resource_id,
       hash=hash,
-      base=self.get_resource_base(session, base_id),
+      base=self.get_resource_base(cursor, base_id),
       content_type=content_type,
       meta=json.loads(meta_text),
       updated_at=updated_at,
@@ -70,11 +67,10 @@ class ResourceModel:
 
   def count_resources(
       self,
-      session: ConnSession,
+      cursor: Cursor,
       resource_base: ResourceBase,
       hash: bytes,
     ) -> int:
-    cursor, _ = session
     cursor.execute(
       "SELECT COUNT(*) FROM resources WHERE base = ? AND hash = ?",
       parameters=(resource_base.id, hash),
@@ -86,12 +82,11 @@ class ResourceModel:
 
   def get_resources(
         self,
-        session: ConnSession,
+        cursor: Cursor,
         resource_base: ResourceBase,
         hash: bytes,
       ) -> Generator[Resource, None, None]:
 
-    cursor, _ = session
     cursor.execute(
       "SELECT id, content_type, meta, updated_at FROM resources WHERE base = ? AND hash = ?",
       parameters=(resource_base.id, hash),
@@ -109,7 +104,7 @@ class ResourceModel:
 
   def create_resource(
         self,
-        session: ConnSession,
+        cursor: Cursor,
         hash: bytes,
         resource_base: ResourceBase,
         content_type: str,
@@ -117,7 +112,6 @@ class ResourceModel:
         updated_at: int,
       ) -> Resource:
 
-    cursor, _ = session
     meta_text = json.dumps(meta)
     cursor.execute(
       "INSERT INTO resources (hash, base, content_type, meta, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -141,7 +135,7 @@ class ResourceModel:
 
   def update_resource(
         self,
-        session: ConnSession,
+        cursor: Cursor,
         resource_id: int,
         hash: bytes | None = None,
         content_type: str = None,
@@ -149,8 +143,7 @@ class ResourceModel:
         updated_at: int | None = None,
       ) -> Resource:
 
-    cursor, _ = session
-    origin_resource = self.get_resource(session, resource_id)
+    origin_resource = self.get_resource(cursor, resource_id)
 
     if hash is None:
       hash = origin_resource.hash
@@ -173,8 +166,7 @@ class ResourceModel:
     )
     return origin_resource
 
-  def remove_resource(self, session: ConnSession, resource_id: int) -> None:
-    cursor, _ = session
+  def remove_resource(self, cursor: Cursor, resource_id: int) -> None:
     cursor.execute(
       "DELETE FROM resources WHERE id = ?",
       parameters=(resource_id,),

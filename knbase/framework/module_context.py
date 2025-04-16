@@ -2,7 +2,7 @@ from enum import Enum
 from sqlite3 import Cursor
 from typing import Iterable
 
-from .common import FRAMEWORK_DB, ConnSession
+from .common import FRAMEWORK_DB
 from ..sqlite3_pool import register_table_creators
 from ..modules import Module, ResourceModule, PreprocessingModule, IndexModule
 
@@ -13,8 +13,8 @@ class _ModelStep(Enum):
   Index = 2
 
 class ModuleContext:
-  def __init__(self, session: ConnSession, iter_modules: Iterable[Module]):
-    modules, model2id = self._bind_modules(session, iter_modules)
+  def __init__(self, cursor: Cursor, iter_modules: Iterable[Module]):
+    modules, model2id = self._bind_modules(cursor, iter_modules)
     self._modules: dict[int, Module] = modules
     self._model2id: dict[str, int] = model2id
 
@@ -24,8 +24,7 @@ class ModuleContext:
   def model_id(self, module: Module) -> int:
     return self._model2id[module.id]
 
-  def _bind_modules(self, session: ConnSession, iter_modules: Iterable[Module]):
-    cursor, _ = session
+  def _bind_modules(self, cursor: Cursor, iter_modules: Iterable[Module]):
     modules: dict[int, Module] = {}
     model2id: dict[str, int] = {}
 
