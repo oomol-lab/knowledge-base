@@ -69,18 +69,13 @@ class TestFrameworkModel(unittest.TestCase):
     model = ResourceModel(ctx)
 
     with db.connect() as (cursor, conn):
-      base = model.create_resource_base(cursor, resource_module, {
-        "foobar": "hello world",
-      })
+      base = model.create_resource_base(cursor, resource_module)
       conn.commit()
 
     with db.connect() as (cursor, _):
       base2 = model.get_resource_base(cursor, base.id)
       self.assertEqual(base2.id, base.id)
       self.assertTrue(base2.module == resource_module)
-      self.assertEqual(base2.meta, {
-        "foobar": "hello world",
-      })
 
     marked1_ids: list[int] = []
     marked2_ids: list[int] = []

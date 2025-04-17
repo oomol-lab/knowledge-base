@@ -14,8 +14,6 @@ from ..sqlite3_pool import register_table_creators
 from ..utils import chunks, fetchmany
 
 
-_CHUNK_SIZE = 36
-
 @dataclass
 class Document:
   id: int
@@ -80,7 +78,7 @@ class DocumentModel:
       "SELECT id, path, res_hash, meta FROM documents WHERE res_hash = ? AND preproc_module = ?",
       (resource_hash, self._ctx.model_id(preprocessing_module)),
     )
-    for row in fetchmany(cursor, _CHUNK_SIZE):
+    for row in fetchmany(cursor):
       document_id, path, res_hash, meta_text = row
       yield Document(
         id=document_id,
@@ -131,7 +129,7 @@ class DocumentModel:
         "SELECT id, event, res_path, res_hash, res_model, from_res_hash, step, created_at FROM tasks WHERE {} = ?".format(field),
         (resource_hash,),
       )
-      for row in fetchmany(cursor, _CHUNK_SIZE):
+      for row in fetchmany(cursor):
         yield self._build_task_with_row(cursor, row)
 
   def _build_task_with_row(self, cursor: Cursor, row: Any):
@@ -152,7 +150,7 @@ class DocumentModel:
       "SELECT id, preproc_module, created_at FROM preproc_tasks WHERE parent = ?",
       (task_id,),
     )
-    for row in fetchmany(cursor, _CHUNK_SIZE):
+    for row in fetchmany(cursor):
       task_id, preproc_module, created_at = row
       task.preprocessing_tasks.append(
         PreprocessingTask(
@@ -165,7 +163,7 @@ class DocumentModel:
       "SELECT id, document, operation, index_module, created_at FROM index_tasks WHERE parent = ?",
       (task_id,),
     )
-    for row in fetchmany(cursor, _CHUNK_SIZE):
+    for row in fetchmany(cursor):
       task_id, document_id, operation, index_module, created_at = row
       task.index_tasks.append(
         IndexTask(
@@ -237,7 +235,7 @@ class DocumentModel:
       "SELECT id FROM documents WHERE res_hash = ?",
       (task.resource_hash,),
     )
-    for row in fetchmany(cursor, _CHUNK_SIZE):
+    for row in fetchmany(cursor):
       document_id = row[0]
       for index_module in index_modules:
         cursor.execute(
@@ -408,7 +406,7 @@ class DocumentModel:
       else:
         completed_task_ids.append(index_task.id)
 
-    for chunk_task_ids in chunks(completed_task_ids, _CHUNK_SIZE):
+    for chunk_task_ids in chunks(completed_task_ids):
       question_marks = ", ".join("?" for _ in chunk_task_ids)
       cursor.execute(
         "SELECT document, operation FROM index_tasks WHERE id IN ({})".format(question_marks),
@@ -425,7 +423,7 @@ class DocumentModel:
         chunk_task_ids,
       )
 
-    for document_ids in chunks(sorted(list(to_remove_document_ids)), _CHUNK_SIZE):
+    for document_ids in chunks(sorted(list(to_remove_document_ids))):
       cursor.execute(
         "DELETE FROM documents WHERE id IN ({})".format(
           ", ".join("?" for _ in document_ids),

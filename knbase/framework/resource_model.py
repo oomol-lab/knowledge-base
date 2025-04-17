@@ -14,36 +14,33 @@ class ResourceModel:
   def __init__(self, modules_context: ModuleContext):
     self._ctx: ModuleContext = modules_context
 
-  def create_resource_base(self, cursor: Cursor, module: Module, meta: Any) -> ResourceBase:
-    meta_text = json.dumps(meta)
+  def create_resource_base(self, cursor: Cursor, module: Module) -> ResourceBase:
     module_id = self._ctx.model_id(module)
     created_at = int(time.time() * 1000)
     cursor.execute(
-      "INSERT INTO bases (model, meta, created_at, created_at) VALUES (?, ?, ?, ?)",
-      (module_id, meta_text, created_at, created_at),
+      "INSERT INTO resource_bases (model, created_at, created_at) VALUES (?, ?, ?)",
+      (module_id, created_at, created_at),
     )
     base_id = cursor.lastrowid
     return ResourceBase(
       id=base_id,
       module=module,
-      meta=meta,
     )
 
   def get_resource_base(self, cursor: Cursor, base_id: int) -> ResourceBase:
     cursor.execute(
-      "SELECT model, meta FROM bases WHERE id = ?",
+      "SELECT model FROM resource_bases WHERE id = ?",
       (base_id,),
     )
     row = cursor.fetchone()
     if row is None:
       raise ValueError(f"Base with id {base_id} not found")
 
-    model_id, meta_text = row
+    model_id = row[0]
     module = self._ctx.module(model_id)
     return ResourceBase(
       id=base_id,
       module=module,
-      meta=json.loads(meta_text),
     )
 
   def get_resource(self, cursor: Cursor, resource_id: int) -> Resource:
@@ -174,10 +171,9 @@ class ResourceModel:
 
 def _create_tables(cursor: Cursor):
   cursor.execute("""
-    CREATE TABLE bases (
+    CREATE TABLE resource_bases (
       id INTEGER PRIMARY KEY,
       model INTEGER NOT NULL,
-      meta TEXT NOT NULL,
       created_at INTEGER,
       updated_at INTEGER
     )

@@ -23,7 +23,6 @@ class Resource:
 class ResourceBase:
   id: int
   module: ResourceModule
-  meta: Any
 
   def scan(self) -> Generator[ResourceEvent, None, None]:
     return self.module.scan(self)
