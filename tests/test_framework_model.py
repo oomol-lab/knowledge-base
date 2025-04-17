@@ -85,14 +85,15 @@ class TestFrameworkModel(unittest.TestCase):
         first=model.count_resources(cursor, base, b"HASH1"),
         second=0,
       )
-      resource = model.create_resource(
-        cursor=cursor,
+      resource = Resource(
+        id=1,
         hash=b"HASH1",
-        resource_base=base,
+        base=base,
         content_type="text/plain",
         meta="RES1",
         updated_at=110,
       )
+      model.save_resource(cursor, resource)
       conn.commit()
       marked_resources1.append(resource)
 
@@ -108,14 +109,15 @@ class TestFrameworkModel(unittest.TestCase):
         first=model.count_resources(cursor, base, b"HASH1"),
         second=1,
       )
-      resource = model.create_resource(
-        cursor=cursor,
+      resource = Resource(
+        id=2,
         hash=b"HASH1",
-        resource_base=base,
+        base=base,
         content_type="text/plain",
         meta="RES2",
         updated_at=120,
       )
+      model.save_resource(cursor, resource)
       conn.commit()
       marked_resources2.append(resource)
 
@@ -131,14 +133,15 @@ class TestFrameworkModel(unittest.TestCase):
         first=model.count_resources(cursor, base, b"HASH1"),
         second=2,
       )
-      resource = model.create_resource(
-        cursor=cursor,
+      resource = Resource(
+        id=3,
         hash=b"HASH3",
-        resource_base=base,
+        base=base,
         content_type="text/plain",
         meta="RES3",
         updated_at=119,
       )
+      model.save_resource(cursor, resource)
       conn.commit()
       marked_resources1.append(resource)
 
@@ -167,9 +170,9 @@ class TestFrameworkModel(unittest.TestCase):
 
     with db.connect() as (cursor, conn):
       for resource in marked_resources1:
-        model.update_resource(cursor, resource.id, meta="NEW_RES")
+        model.update_resource(cursor, resource, meta="NEW_RES")
       for resource in marked_resources2:
-        model.update_resource(cursor, resource.id, hash=b"HASH2")
+        model.update_resource(cursor, resource, hash=b"HASH2")
       conn.commit()
 
     with db.connect() as (cursor, _):

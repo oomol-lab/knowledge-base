@@ -15,10 +15,10 @@ class ResourceModel:
     self._ctx: ModuleContext = modules_context
 
   def create_resource_base(self, cursor: Cursor, module: Module) -> ResourceBase:
-    module_id = self._ctx.model_id(module)
+    module_id = self._ctx.module_id(module)
     created_at = int(time.time() * 1000)
     cursor.execute(
-      "INSERT INTO resource_bases (model, created_at, created_at) VALUES (?, ?, ?)",
+      "INSERT INTO resource_bases (module, created_at, created_at) VALUES (?, ?, ?)",
       (module_id, created_at, created_at),
     )
     base_id = cursor.lastrowid
@@ -29,28 +29,28 @@ class ResourceModel:
 
   def get_resource_base(self, cursor: Cursor, base_id: int) -> ResourceBase:
     cursor.execute(
-      "SELECT model FROM resource_bases WHERE id = ?",
+      "SELECT module FROM resource_bases WHERE id = ?",
       (base_id,),
     )
     row = cursor.fetchone()
     if row is None:
       raise ValueError(f"Base with id {base_id} not found")
 
-    model_id = row[0]
-    module = self._ctx.module(model_id)
+    module_id = row[0]
+    module = self._ctx.module(module_id)
     return ResourceBase(
       id=base_id,
       module=module,
     )
 
-  def get_resource(self, cursor: Cursor, resource_id: int) -> Resource:
+  def get_resource(self, cursor: Cursor, resource_id: int) -> Resource | None:
     cursor.execute(
       "SELECT hash, base, content_type, meta, updated_at FROM resources WHERE id = ?",
       (resource_id,),
     )
     row = cursor.fetchone()
     if row is None:
-      raise ValueError(f"Resource with id {resource_id} not found")
+      return None
 
     hash, base_id, content_type, meta_text, updated_at = row
     return Resource(
@@ -99,48 +99,28 @@ class ResourceModel:
         updated_at=updated_at,
       )
 
-  def create_resource(
-        self,
-        cursor: Cursor,
-        hash: bytes,
-        resource_base: ResourceBase,
-        content_type: str,
-        meta: Any,
-        updated_at: int,
-      ) -> Resource:
-
-    meta_text = json.dumps(meta)
+  def save_resource(self, cursor: Cursor, resource: Resource) -> None:
     cursor.execute(
-      "INSERT INTO resources (hash, base, content_type, meta, updated_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO resources (id, hash, base, content_type, meta, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
       (
-        hash,
-        resource_base.id,
-        content_type,
-        meta_text,
-        updated_at,
+        resource.id,
+        resource.hash,
+        resource.base.id,
+        resource.content_type,
+        json.dumps(resource.meta),
+        resource.updated_at,
       ),
-    )
-    resource_id = cursor.lastrowid
-    return Resource(
-      id=resource_id,
-      hash=hash,
-      base=resource_base,
-      content_type=content_type,
-      meta=meta,
-      updated_at=updated_at,
     )
 
   def update_resource(
         self,
         cursor: Cursor,
-        resource_id: int,
+        origin_resource: Resource,
         hash: bytes | None = None,
         content_type: str = None,
         meta: Any | None = None,
         updated_at: int | None = None,
-      ) -> Resource:
-
-    origin_resource = self.get_resource(cursor, resource_id)
+      ) -> None:
 
     if hash is None:
       hash = origin_resource.hash
@@ -158,10 +138,9 @@ class ResourceModel:
         content_type,
         json.dumps(meta),
         updated_at,
-        resource_id,
+        origin_resource.id,
       ),
     )
-    return origin_resource
 
   def remove_resource(self, cursor: Cursor, resource_id: int) -> None:
     cursor.execute(
@@ -173,7 +152,7 @@ def _create_tables(cursor: Cursor):
   cursor.execute("""
     CREATE TABLE resource_bases (
       id INTEGER PRIMARY KEY,
-      model INTEGER NOT NULL,
+      module INTEGER NOT NULL,
       created_at INTEGER,
       updated_at INTEGER
     )

@@ -14,19 +14,19 @@ class _ModelStep(Enum):
 
 class ModuleContext:
   def __init__(self, cursor: Cursor, iter_modules: Iterable[Module]):
-    modules, model2id = self._bind_modules(cursor, iter_modules)
+    modules, module2id = self._bind_modules(cursor, iter_modules)
     self._modules: dict[int, Module] = modules
-    self._model2id: dict[str, int] = model2id
+    self._module2id: dict[str, int] = module2id
 
   def module(self, id: int) -> Module:
     return self._modules[id]
 
-  def model_id(self, module: Module) -> int:
-    return self._model2id[module.id]
+  def module_id(self, module: Module) -> int:
+    return self._module2id[module.id]
 
   def _bind_modules(self, cursor: Cursor, iter_modules: Iterable[Module]):
     modules: dict[int, Module] = {}
-    model2id: dict[str, int] = {}
+    module2id: dict[str, int] = {}
 
     for module in iter_modules:
       class_id = module.id
@@ -63,9 +63,9 @@ class ModuleContext:
         id = cursor.lastrowid
 
       modules[id] = module
-      model2id[module.id] = id
+      module2id[module.id] = id
 
-    return modules, model2id
+    return modules, module2id
 
 def _create_tables(cursor: Cursor):
   cursor.execute("""

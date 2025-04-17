@@ -97,7 +97,7 @@ class KnowledgeBaseModel:
       else:
         raise ValueError(f"Unknown module type {module}")
 
-      module_id = self._ctx.model_id(module)
+      module_id = self._ctx.module_id(module)
       cursor.execute(
         "INSERT INTO knbase_process_records (kind, knbase_id, module_id, params) VALUES (?, ?, ?, ?)",
         (kind.value, knbase_id, module_id, dumps(params)),

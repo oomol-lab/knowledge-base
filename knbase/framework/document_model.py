@@ -76,7 +76,7 @@ class DocumentModel:
 
     cursor.execute(
       "SELECT id, path, res_hash, meta FROM documents WHERE res_hash = ? AND preproc_module = ?",
-      (resource_hash, self._ctx.model_id(preprocessing_module)),
+      (resource_hash, self._ctx.module_id(preprocessing_module)),
     )
     for row in fetchmany(cursor):
       document_id, path, res_hash, meta_text = row
@@ -98,14 +98,14 @@ class DocumentModel:
     if len(unexpected_tasks_ids) == 0:
       cursor.execute(
         """
-          SELECT id, event, res_path, res_hash, res_model, from_res_hash, step, created_at
+          SELECT id, event, res_path, res_hash, res_module, from_res_hash, step, created_at
           FROM tasks ORDER BY created_at LIMIT 1
         """
       )
     else:
       cursor.execute(
         """
-          SELECT id, event, res_path, res_hash, res_model, from_res_hash, step, created_at
+          SELECT id, event, res_path, res_hash, res_module, from_res_hash, step, created_at
           FROM tasks WHERE id NOT IN ({}) ORDER BY created_at LIMIT 1
         """.format(
           ", ".join("?" for _ in unexpected_tasks_ids)
@@ -118,15 +118,22 @@ class DocumentModel:
 
     return self._build_task_with_row(cursor, row)
 
-  def get_tasks(
-      self,
-      cursor: Cursor,
-      resource_hash: bytes,
-    ) -> Generator[Task, None, None]:
+  def count_resource_hash_refs(self, cursor: Cursor, resource_hash: bytes) -> int:
+    res_count: int = 0
+    for field in ("res_hash", "from_res_hash"):
+      cursor.execute(
+        f"SELECT COUNT(*) FROM tasks WHERE {field} = ?",
+        (resource_hash),
+      )
+      row = cursor.fetchone()
+      if row is not None:
+        res_count += row[0]
+    return res_count
 
+  def get_tasks(self, cursor: Cursor, resource_hash: bytes) -> Generator[Task, None, None]:
     cursor.execute(
       """
-      SELECT id, event, res_path, res_hash, res_model, from_res_hash, step, created_at
+      SELECT id, event, res_path, res_hash, res_module, from_res_hash, step, created_at
       FROM tasks WHERE res_hash = ? ORDER BY id DESC
       """,
       (resource_hash,),
@@ -135,13 +142,13 @@ class DocumentModel:
       yield self._build_task_with_row(cursor, row)
 
   def _build_task_with_row(self, cursor: Cursor, row: Any):
-    task_id, event_id, resource_path, resource_hash, resource_model, from_res_hash, step, created_at = row
+    task_id, event_id, resource_path, resource_hash, resource_module, from_res_hash, step, created_at = row
     task = Task(
       id=task_id,
       event_id=event_id,
       resource_path=Path(resource_path),
       resource_hash=resource_hash,
-      resource_module=self._ctx.module(resource_model),
+      resource_module=self._ctx.module(resource_module),
       from_resource_hash=from_res_hash,
       step=TaskStep(step),
       preprocessing_tasks=[],
@@ -191,12 +198,12 @@ class DocumentModel:
     step = TaskStep.READY
     created_at = int(time() * 1000)
     cursor.execute(
-      "INSERT INTO tasks (event, res_path, res_hash, res_model, from_res_hash, step, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO tasks (event, res_path, res_hash, res_module, from_res_hash, step, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       (
         event_id,
         str(resource_path),
         resource_hash,
-        self._ctx.model_id(resource_module),
+        self._ctx.module_id(resource_module),
         from_resource_hash,
         step.value,
         created_at,
@@ -246,7 +253,7 @@ class DocumentModel:
             task.id,
             document_id,
             IndexTaskOperation.REMOVE.value,
-            self._ctx.model_id(index_module),
+            self._ctx.module_id(index_module),
             created_at,
           ),
         )
@@ -291,7 +298,7 @@ class DocumentModel:
     assert task.step == TaskStep.READY
 
     for module in modules:
-      module_id = self._ctx.model_id(module)
+      module_id = self._ctx.module_id(module)
       cursor.execute(
         "INSERT INTO preproc_tasks (parent, preproc_module, created_at) VALUES (?, ?, ?)",
         (
@@ -469,7 +476,7 @@ class DocumentModel:
       added_documents: Iterable[DocumentParams],
     ) -> Generator[IndexTask, None, None]:
 
-    preprocessing_module_id = self._ctx.model_id(preprocessing_module)
+    preprocessing_module_id = self._ctx.module_id(preprocessing_module)
 
     for document_params in added_documents:
       cursor.execute(
@@ -489,7 +496,7 @@ class DocumentModel:
             task.id,
             document_id,
             IndexTaskOperation.CREATE.value,
-            self._ctx.model_id(index_module),
+            self._ctx.module_id(index_module),
             created_at,
           ),
         )
@@ -520,7 +527,7 @@ class DocumentModel:
             task.id,
             removed_document_id,
             IndexTaskOperation.REMOVE.value,
-            self._ctx.model_id(preprocessing_module),
+            self._ctx.module_id(preprocessing_module),
             created_at,
           ),
         )
@@ -571,7 +578,7 @@ def _create_tables(cursor: Cursor):
       event INTEGER NOT NULL,
       res_path TEXT NOT NULL,
       res_hash BLOB NOT NULL,
-      res_model INTEGER NOT NULL,
+      res_module INTEGER NOT NULL,
       from_res_hash BLOB NULL,
       step INTEGER NOT NULL,
       created_at INTEGER NOT NULL

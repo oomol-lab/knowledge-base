@@ -1,5 +1,6 @@
 from pathlib import Path
 from enum import Enum
+from sqlite3 import Cursor
 from typing import Any, Iterable, Generator
 
 from ..sqlite3_pool import SQLite3Pool
@@ -13,8 +14,8 @@ from ..modules import (
 from .common import FRAMEWORK_DB
 from .module_context import ModuleContext
 from .knowledge_base_model import KnowledgeBase, KnowledgeBaseModel
-from .resource_model import ResourceModel
-from .document_model import DocumentModel, Task
+from .resource_model import ResourceModel, ResourceBase
+from .document_model import DocumentModel
 
 
 class StateMachineState(Enum):
@@ -75,34 +76,25 @@ class StateMachine:
         base: KnowledgeBase,
         event_id: int,
         path: Path,
-        hash: bytes,
-        content_type: str,
-        meta: Any,
-        updated_at: int
-      ) -> Resource:
+        resource: Resource,
+      ) -> None:
 
     assert self._state == StateMachineState.SCANNING
     with self._db.connect() as (cursor, conn):
       try:
         cursor.execute("BEGIN TRANSACTION")
-        resource = self._resource_model.create_resource(
-          cursor=cursor,
-          hash=hash,
-          resource_base=base.resource_base,
-          content_type=content_type,
-          meta=meta,
-          updated_at=updated_at,
-        )
-        self._submit_task_if_hash_created(
-          event_id=event_id,
-          hash=hash,
-          resource_path=path,
-          resource_hash=hash,
-          resource_module=base.resource_base.module,
-          from_resource_hash=None,
-        )
-        return resource
-
+        assert self._resource_model.get_resource(cursor, resource.id) is None
+        hash_refs = self._count_resource_hash(cursor, base.resource_base, resource.hash)
+        self._resource_model.save_resource(cursor, resource)
+        if hash_refs == 0:
+          self._submit_task_hash_created(
+            cursor=cursor,
+            event_id=event_id,
+            resource_base=base.resource_base,
+            resource_path=path,
+            resource_hash=resource.hash,
+            from_resource_hash=None,
+          )
       except BaseException as e:
         conn.rollback()
         raise e
@@ -112,57 +104,42 @@ class StateMachine:
         base: KnowledgeBase,
         event_id: int,
         path: Path,
-        hash: bytes,
-        new_hash: bytes,
-        new_content_type: str,
-        new_meta: Any,
-        updated_at: int,
-      ):
-
-    if hash == new_hash:
-      return self.create_resource(
-        base=base,
-        event_id=event_id,
-        path=path,
-        hash=new_hash,
-        content_type=new_content_type,
-        meta=new_meta,
-        updated_at=updated_at,
-      )
+        resource: Resource,
+      ) -> None:
 
     assert self._state == StateMachineState.SCANNING
     with self._db.connect() as (cursor, conn):
       try:
         cursor.execute("BEGIN TRANSACTION")
-        origin_resource = next(self._resource_model.get_resources(
+        origin_resource = self._resource_model.get_resource(cursor, resource.id)
+        assert origin_resource is not None
+        hash_refs = self._count_resource_hash(cursor, base.resource_base, resource.hash)
+        self._resource_model.update_resource(
           cursor=cursor,
-          resource_base=base.resource_base,
-          hash=hash,
-        ))
-        resource = self._resource_model.update_resource(
-          cursor=cursor,
-          resource_id=origin_resource.id,
-          hash=new_hash,
-          content_type=new_content_type,
-          meta=new_meta,
-          updated_at=updated_at,
+          origin_resource=origin_resource,
+          hash=resource.hash,
+          content_type=resource.content_type,
+          meta=resource.meta,
+          updated_at=resource.updated_at,
         )
-        self._submit_task_if_hash_created(
-          event_id=event_id,
-          hash=new_hash,
-          resource_path=path,
-          resource_hash=new_hash,
-          resource_module=base.resource_base.module,
-          from_resource_hash=hash,
-        )
-        self._submit_task_if_hash_removed(
-          event_id=event_id,
-          hash=hash,
-          resource_path=path,
-          resource_hash=new_hash,
-          resource_module=base.resource_base.module,
-        )
-        return resource
+        if resource.hash != origin_resource.hash:
+          if hash_refs == 0:
+            self._submit_task_hash_created(
+              cursor=cursor,
+              event_id=event_id,
+              resource_base=base.resource_base,
+              resource_path=path,
+              resource_hash=resource.hash,
+              from_resource_hash=origin_resource.hash,
+            )
+          if self._count_resource_hash(cursor, base.resource_base, origin_resource.hash) == 0:
+            self._submit_task_hash_removed(
+              cursor=cursor,
+              event_id=event_id,
+              resource_base=base.resource_base,
+              resource_hash=origin_resource.hash,
+              resource_module=base.resource_base.module,
+            )
 
       except BaseException as e:
         conn.rollback()
@@ -172,38 +149,57 @@ class StateMachine:
         self,
         base: KnowledgeBase,
         event_id: int,
-        hash: bytes,
+        resource: Resource,
       ) -> None:
+
     assert self._state == StateMachineState.SCANNING
     with self._db.connect() as (cursor, conn):
       try:
         cursor.execute("BEGIN TRANSACTION")
-        # self._resource_model.remove_resource(
-        #   cursor,
-        # )
-        # return resource
-
+        assert self._resource_model.get_resource(cursor, resource.id) is not None
+        self._resource_model.remove_resource(cursor, resource.id)
+        if self._count_resource_hash(cursor, base.resource_base, resource.hash) == 0:
+          self._submit_task_hash_removed(
+            event_id=event_id,
+            cursor=cursor,
+            resource_base=base.resource_base,
+            resource_hash=resource.hash,
+            resource_module=base.resource_base.module,
+          )
       except BaseException as e:
         conn.rollback()
         raise e
 
-  def _submit_task_if_hash_created(
+  def _submit_task_hash_created(
       self,
+      cursor: Cursor,
       event_id: int,
-      hash: bytes,
+      resource_base: ResourceBase,
       resource_path: Path,
       resource_hash: bytes,
-      resource_module: ResourceModule,
       from_resource_hash: bytes | None,
     ):
     pass
 
-  def _submit_task_if_hash_removed(
+  def _submit_task_hash_removed(
       self,
+      cursor: Cursor,
       event_id: int,
-      hash: bytes,
-      resource_path: Path,
+      resource_base: ResourceBase,
       resource_hash: bytes,
       resource_module: ResourceModule,
     ):
     pass
+
+  def _count_resource_hash(self, cursor: Cursor, resource_base: ResourceBase, hash: bytes) -> int:
+    count: int = 0
+    count += self._resource_model.count_resources(
+      cursor=cursor,
+      hash=hash,
+      resource_base=resource_base,
+    )
+    count += self._document_model.count_resource_hash_refs(
+      cursor=cursor,
+      resource_hash=hash,
+    )
+    return count
