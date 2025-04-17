@@ -11,7 +11,7 @@ from pathlib import Path
 from .common import FRAMEWORK_DB
 from .module_context import ModuleContext, ResourceModule, PreprocessingModule, IndexModule
 from ..sqlite3_pool import register_table_creators
-from ..utils import fetchmany
+from ..utils import chunks, fetchmany
 
 
 _CHUNK_SIZE = 36
@@ -74,7 +74,7 @@ class DocumentModel:
       cursor: Cursor,
       resource_hash: bytes,
       preprocessing_module: PreprocessingModule,
-    ):
+    ) -> Generator[Document, None, None]:
 
     cursor.execute(
       "SELECT id, path, res_hash, meta FROM documents WHERE res_hash = ? AND preproc_module = ?",
@@ -101,14 +101,14 @@ class DocumentModel:
       cursor.execute(
         """
           SELECT id, event, res_path, res_hash, res_model, from_res_hash, step, created_at
-          FROM tasks LIMIT 1 ORDER BY created_at
+          FROM tasks ORDER BY created_at LIMIT 1
         """
       )
     else:
       cursor.execute(
         """
           SELECT id, event, res_path, res_hash, res_model, from_res_hash, step, created_at
-          FROM tasks WHERE id NOT IN ({}) LIMIT 1 ORDER BY created_at
+          FROM tasks WHERE id NOT IN ({}) ORDER BY created_at LIMIT 1
         """.format(
           ", ".join("?" for _ in unexpected_tasks_ids)
         ),
@@ -118,20 +118,7 @@ class DocumentModel:
     if row is None:
       return None
 
-    task_id, event_id, resource_path, resource_hash, resource_model, from_res_hash, step, created_at = row
-    task = Task(
-      id=task_id,
-      event_id=event_id,
-      resource_path=Path(resource_path),
-      resource_hash=resource_hash,
-      resource_module=self._ctx.module(resource_model),
-      from_resource_hash=from_res_hash,
-      step=TaskStep(step),
-      preprocessing_tasks=[],
-      index_tasks=[],
-      created_at=created_at,
-    )
-    return task
+    return self._build_task_with_row(cursor, row)
 
   def get_tasks(
       self,
@@ -145,19 +132,51 @@ class DocumentModel:
         (resource_hash,),
       )
       for row in fetchmany(cursor, _CHUNK_SIZE):
-        task_id, event_id, resource_path, resource_hash, resource_model, from_res_hash, step, created_at = row
-        yield Task(
+        yield self._build_task_with_row(cursor, row)
+
+  def _build_task_with_row(self, cursor: Cursor, row: Any):
+    task_id, event_id, resource_path, resource_hash, resource_model, from_res_hash, step, created_at = row
+    task = Task(
+      id=task_id,
+      event_id=event_id,
+      resource_path=Path(resource_path),
+      resource_hash=resource_hash,
+      resource_module=self._ctx.module(resource_model),
+      from_resource_hash=from_res_hash,
+      step=TaskStep(step),
+      preprocessing_tasks=[],
+      index_tasks=[],
+      created_at=created_at,
+    )
+    cursor.execute(
+      "SELECT id, preproc_module, created_at FROM preproc_tasks WHERE parent = ?",
+      (task_id,),
+    )
+    for row in fetchmany(cursor, _CHUNK_SIZE):
+      task_id, preproc_module, created_at = row
+      task.preprocessing_tasks.append(
+        PreprocessingTask(
           id=task_id,
-          event_id=event_id,
-          resource_path=Path(resource_path),
-          resource_hash=resource_hash,
-          resource_module=self._ctx.module(resource_model),
-          from_resource_hash=from_res_hash,
-          step=TaskStep(step),
-          preprocessing_tasks=[],
-          index_tasks=[],
+          module=self._ctx.module(preproc_module),
           created_at=created_at,
-        )
+        ),
+      )
+    cursor.execute(
+      "SELECT id, document, operation, index_module, created_at FROM index_tasks WHERE parent = ?",
+      (task_id,),
+    )
+    for row in fetchmany(cursor, _CHUNK_SIZE):
+      task_id, document_id, operation, index_module, created_at = row
+      task.index_tasks.append(
+        IndexTask(
+          id=task_id,
+          document_id=document_id,
+          module=self._ctx.module(index_module),
+          operation=IndexTaskOperation(operation),
+          created_at=created_at,
+        ),
+      )
+    return task
 
   def create_task(
         self,
@@ -206,17 +225,17 @@ class DocumentModel:
   def go_to_remove(
         self,
         cursor: Cursor,
-        origin: Task,
+        task: Task,
         index_modules: Iterable[IndexModule],
-      ) -> None:
-    assert origin.step == TaskStep.READY
-    assert origin.from_resource_hash is None
+      ) -> Task:
+    assert task.step == TaskStep.READY
+    assert task.from_resource_hash is None
 
     created_at = int(time() * 1000)
     index_tasks: list[IndexTask] = []
     cursor.execute(
       "SELECT id FROM documents WHERE res_hash = ?",
-      (origin.resource_hash,),
+      (task.resource_hash,),
     )
     for row in fetchmany(cursor, _CHUNK_SIZE):
       document_id = row[0]
@@ -224,7 +243,7 @@ class DocumentModel:
         cursor.execute(
           "INSERT INTO index_tasks (parent, document, operation, index_module, created_at) VALUES (?, ?, ?, ?, ?)",
           (
-            origin.id,
+            task.id,
             document_id,
             IndexTaskOperation.REMOVE.value,
             self._ctx.model_id(index_module),
@@ -236,7 +255,7 @@ class DocumentModel:
             id=cursor.lastrowid,
             document_id=document_id,
             module=index_module,
-            operation=IndexTaskOperation.CREATE,
+            operation=IndexTaskOperation.REMOVE,
             created_at=created_at,
           ),
         )
@@ -244,39 +263,39 @@ class DocumentModel:
       "UPDATE tasks SET step = ? WHERE id = ?",
       (
         TaskStep.PROCESSING.value,
-        origin.id,
+        task.id,
       ),
     )
     return Task(
-      id=origin.id,
-      event_id=origin.event_id,
-      resource_path=origin.resource_path,
-      resource_hash=origin.resource_hash,
-      resource_module=origin.resource_module,
-      from_resource_hash=origin.from_resource_hash,
+      id=task.id,
+      event_id=task.event_id,
+      resource_path=task.resource_path,
+      resource_hash=task.resource_hash,
+      resource_module=task.resource_module,
+      from_resource_hash=task.from_resource_hash,
       step=TaskStep.PROCESSING,
       preprocessing_tasks=[],
       index_tasks=index_tasks,
-      created_at=origin.created_at,
+      created_at=task.created_at,
     )
 
   def go_to_preprocess(
         self,
         cursor: Cursor,
-        origin: Task,
+        task: Task,
         modules: Iterable[PreprocessingModule],
       ) -> Task:
 
     created_at = int(time() * 1000)
     preprocessing_tasks: list[PreprocessingTask] = []
-    assert origin.step == TaskStep.READY
+    assert task.step == TaskStep.READY
 
     for module in modules:
       module_id = self._ctx.model_id(module)
       cursor.execute(
         "INSERT INTO preproc_tasks (parent, preproc_module, created_at) VALUES (?, ?, ?)",
         (
-          origin.id,
+          task.id,
           module_id,
           created_at,
         ),
@@ -293,26 +312,26 @@ class DocumentModel:
       "UPDATE tasks SET step = ? WHERE id = ?",
       (
         TaskStep.PROCESSING.value,
-        origin.id,
+        task.id,
       ),
     )
     return Task(
-      id=origin.id,
-      event_id=origin.event_id,
-      resource_path=origin.resource_path,
-      resource_hash=origin.resource_hash,
-      resource_module=origin.resource_module,
-      from_resource_hash=origin.from_resource_hash,
+      id=task.id,
+      event_id=task.event_id,
+      resource_path=task.resource_path,
+      resource_hash=task.resource_hash,
+      resource_module=task.resource_module,
+      from_resource_hash=task.from_resource_hash,
       step=TaskStep.PROCESSING,
       preprocessing_tasks=preprocessing_tasks,
       index_tasks=[],
-      created_at=origin.created_at,
+      created_at=task.created_at,
     )
 
   def complete_preprocess(
         self,
         cursor: Cursor,
-        origin: Task,
+        task: Task,
         preprocessing_task: PreprocessingTask,
         index_modules: Iterable[IndexModule],
         added_documents: Iterable[DocumentParams],
@@ -321,11 +340,11 @@ class DocumentModel:
 
     created_at = int(time() * 1000)
     preprocessing_tasks: list[PreprocessingTask] = []
-    index_tasks: list[IndexTask] = [*origin.index_tasks]
+    index_tasks: list[IndexTask] = [*task.index_tasks]
     found_sub_task = False
 
-    for sub_task in origin.preprocessing_tasks:
-      if sub_task.id != preprocessing_task.id:
+    for sub_task in task.preprocessing_tasks:
+      if sub_task.id == preprocessing_task.id:
         found_sub_task = True
       else:
         preprocessing_tasks.append(sub_task)
@@ -334,7 +353,7 @@ class DocumentModel:
 
     for index_task in self._gen_added_index_tasks(
       cursor=cursor,
-      origin=origin,
+      task=task,
       created_at=created_at,
       preprocessing_module=preprocessing_task.module,
       index_modules=index_modules,
@@ -344,7 +363,7 @@ class DocumentModel:
 
     for index_task in self._gen_removed_index_tasks(
       cursor=cursor,
-      origin=origin,
+      task=task,
       created_at=created_at,
       preprocessing_module=preprocessing_task.module,
       index_modules=index_modules,
@@ -352,77 +371,98 @@ class DocumentModel:
     ):
       index_tasks.append(index_task)
 
+    cursor.execute(
+      "DELETE FROM preproc_tasks WHERE id = ?",
+      (preprocessing_task.id,),
+    )
     index_tasks.sort(key=lambda x: (x.operation.value, x.created_at))
 
     return Task(
-      id=origin.id,
-      event_id=origin.event_id,
-      resource_path=origin.resource_path,
-      resource_hash=origin.resource_hash,
-      resource_module=origin.resource_module,
-      from_resource_hash=origin.from_resource_hash,
+      id=task.id,
+      event_id=task.event_id,
+      resource_path=task.resource_path,
+      resource_hash=task.resource_hash,
+      resource_module=task.resource_module,
+      from_resource_hash=task.from_resource_hash,
       step=TaskStep.PROCESSING,
       preprocessing_tasks=preprocessing_tasks,
       index_tasks=index_tasks,
-      created_at=origin.created_at,
+      created_at=task.created_at,
     )
 
   def complete_handle_index(
         self,
         cursor: Cursor,
-        origin: Task,
+        task: Task,
         index_tasks: Iterable[IndexTask],
       ) -> Task:
 
     index_tasks_ids = set(task.id for task in index_tasks)
     remain_index_tasks: list[IndexTask] = []
     completed_task_ids: list[int] = []
+    to_remove_document_ids: set[int] = set()
 
-    for index_task in origin.index_tasks:
+    for index_task in task.index_tasks:
       if index_task.id not in index_tasks_ids:
         remain_index_tasks.append(index_task)
       else:
         completed_task_ids.append(index_task.id)
 
-    for i in range(0, len(completed_task_ids), _CHUNK_SIZE):
-      for chunk_task_ids in completed_task_ids[i : i + _CHUNK_SIZE]:
-        cursor.execute(
-          "REMOVE FROM index_tasks WHERE id IN ({})".format(
-            ", ".join("?" for _ in chunk_task_ids)
-          ),
-          chunk_task_ids,
-        )
-
-    preprocess_tasks_count = self._sub_tasks_count(cursor, "preproc_tasks", origin)
-    index_tasks_count = self._sub_tasks_count(cursor, "index_tasks", origin)
-
-    task = Task(
-      id=origin.id,
-      event_id=origin.event_id,
-      resource_path=origin.resource_path,
-      resource_hash=origin.resource_hash,
-      resource_module=origin.resource_module,
-      step=TaskStep.PROCESSING,
-      from_resource_hash=origin.from_resource_hash,
-      preprocessing_tasks=origin.preprocessing_tasks,
-      index_tasks=remain_index_tasks,
-      created_at=origin.created_at,
-    )
-    if preprocess_tasks_count == 0 and index_tasks_count == 0:
-      task.preprocessing_tasks = []
-      task.index_tasks = []
-      task.step = TaskStep.COMPLETED
+    for chunk_task_ids in chunks(completed_task_ids, _CHUNK_SIZE):
+      question_marks = ", ".join("?" for _ in chunk_task_ids)
       cursor.execute(
-        "REMOVE FROM tasks WHERE id = ?",
-        (origin.id,),
+        "SELECT document, operation FROM index_tasks WHERE id IN ({})".format(question_marks),
+        chunk_task_ids,
+      )
+      for row in cursor.fetchall():
+        document_id: int = row[0]
+        operation = IndexTaskOperation(row[1])
+        if operation == IndexTaskOperation.REMOVE:
+          to_remove_document_ids.add(document_id)
+
+      cursor.execute(
+        "DELETE FROM index_tasks WHERE id IN ({})".format(question_marks),
+        chunk_task_ids,
       )
 
-    return task
+    for document_ids in chunks(sorted(list(to_remove_document_ids)), _CHUNK_SIZE):
+      cursor.execute(
+        "DELETE FROM documents WHERE id IN ({})".format(
+          ", ".join("?" for _ in document_ids),
+        ),
+        document_ids,
+      )
+
+    preprocess_tasks_count = self._sub_tasks_count(cursor, "preproc_tasks", task)
+    index_tasks_count = self._sub_tasks_count(cursor, "index_tasks", task)
+
+    new_task = Task(
+      id=task.id,
+      event_id=task.event_id,
+      resource_path=task.resource_path,
+      resource_hash=task.resource_hash,
+      resource_module=task.resource_module,
+      step=TaskStep.PROCESSING,
+      from_resource_hash=task.from_resource_hash,
+      preprocessing_tasks=task.preprocessing_tasks,
+      index_tasks=remain_index_tasks,
+      created_at=task.created_at,
+    )
+    if preprocess_tasks_count == 0 and index_tasks_count == 0:
+      new_task.preprocessing_tasks = []
+      new_task.index_tasks = []
+      new_task.step = TaskStep.COMPLETED
+      cursor.execute(
+        "DELETE FROM tasks WHERE id = ?",
+        (task.id,),
+      )
+
+    return new_task
 
   def _gen_added_index_tasks(
       self,
       cursor: Cursor,
-      origin: Task,
+      task: Task,
       created_at: int,
       preprocessing_module: PreprocessingModule,
       index_modules: Iterable[IndexModule],
@@ -436,7 +476,7 @@ class DocumentModel:
         "INSERT INTO documents (path, res_hash, preproc_module, meta) VALUES (?, ?, ?, ?)",
         (
           str(document_params.path),
-          origin.resource_hash,
+          task.resource_hash,
           preprocessing_module_id,
           dumps(document_params.meta),
         ),
@@ -446,7 +486,7 @@ class DocumentModel:
         cursor.execute(
           "INSERT INTO index_tasks (parent, document, operation, index_module, created_at) VALUES (?, ?, ?, ?, ?)",
           (
-            origin.id,
+            task.id,
             document_id,
             IndexTaskOperation.CREATE.value,
             self._ctx.model_id(index_module),
@@ -465,7 +505,7 @@ class DocumentModel:
   def _gen_removed_index_tasks(
       self,
       cursor: Cursor,
-      origin: Task,
+      task: Task,
       created_at: int,
       preprocessing_module: PreprocessingModule,
       index_modules: Iterable[IndexModule],
@@ -477,7 +517,7 @@ class DocumentModel:
         cursor.execute(
           "INSERT INTO index_tasks (parent, document, operation, index_module, created_at) VALUES (?, ?, ?, ?, ?)",
           (
-            origin.id,
+            task.id,
             removed_document_id,
             IndexTaskOperation.REMOVE.value,
             self._ctx.model_id(preprocessing_module),
@@ -509,7 +549,6 @@ class DocumentModel:
       return 0
     else:
       return row[0]
-
 
 def _create_tables(cursor: Cursor):
   cursor.execute("""
@@ -570,6 +609,7 @@ def _create_tables(cursor: Cursor):
       operation INTEGER NOT NULL,
       index_module INTEGER NOT NULL,
       created_at INTEGER NOT NULL
+    )
   """)
 
   cursor.execute("""

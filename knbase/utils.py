@@ -14,9 +14,9 @@ def chunks(target: Iterable[T], size: int) -> Iterable[list[T]]:
   if len(buffer) > 0:
     yield buffer
 
-def fetchmany(cursor: Cursor, size: int) -> Generator[list[Any], Any, None]:
+def fetchmany(cursor: Cursor, size: int) -> Generator[Any, Any, None]:
   while True:
     rows = cursor.fetchmany(size)
     if not rows:
       break
-    yield rows
+    yield from rows
