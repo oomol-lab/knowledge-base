@@ -124,13 +124,15 @@ class DocumentModel:
       resource_hash: bytes,
     ) -> Generator[Task, None, None]:
 
-    for field in ("res_hash", "from_res_hash"):
-      cursor.execute(
-        "SELECT id, event, res_path, res_hash, res_model, from_res_hash, step, created_at FROM tasks WHERE {} = ?".format(field),
-        (resource_hash,),
-      )
-      for row in fetchmany(cursor):
-        yield self._build_task_with_row(cursor, row)
+    cursor.execute(
+      """
+      SELECT id, event, res_path, res_hash, res_model, from_res_hash, step, created_at
+      FROM tasks WHERE res_hash = ? ORDER BY id DESC
+      """,
+      (resource_hash,),
+    )
+    for row in fetchmany(cursor):
+      yield self._build_task_with_row(cursor, row)
 
   def _build_task_with_row(self, cursor: Cursor, row: Any):
     task_id, event_id, resource_path, resource_hash, resource_model, from_res_hash, step, created_at = row

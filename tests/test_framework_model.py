@@ -77,8 +77,8 @@ class TestFrameworkModel(unittest.TestCase):
       self.assertEqual(base2.id, base.id)
       self.assertTrue(base2.module == resource_module)
 
-    marked1_ids: list[int] = []
-    marked2_ids: list[int] = []
+    marked_resources1: list[Resource] = []
+    marked_resources2: list[Resource] = []
 
     with db.connect() as (cursor, conn):
       self.assertEqual(
@@ -94,7 +94,7 @@ class TestFrameworkModel(unittest.TestCase):
         updated_at=110,
       )
       conn.commit()
-      marked1_ids.append(resource.id)
+      marked_resources1.append(resource)
 
       self.assertEqual(resource.hash, b"HASH1")
       self.assertEqual(resource.base.id, base.id)
@@ -117,7 +117,7 @@ class TestFrameworkModel(unittest.TestCase):
         updated_at=120,
       )
       conn.commit()
-      marked2_ids.append(resource.id)
+      marked_resources2.append(resource)
 
       self.assertEqual(resource.hash, b"HASH1")
       self.assertEqual(resource.base.id, base.id)
@@ -140,7 +140,7 @@ class TestFrameworkModel(unittest.TestCase):
         updated_at=119,
       )
       conn.commit()
-      marked1_ids.append(resource.id)
+      marked_resources1.append(resource)
 
       self.assertEqual(resource.hash, b"HASH3")
       self.assertEqual(resource.base.id, base.id)
@@ -163,13 +163,13 @@ class TestFrameworkModel(unittest.TestCase):
         (b"HASH1", "RES1", 110),
       ])
 
-    marked1_ids.sort()
+    marked_resources1.sort(key=lambda r: r.id)
 
     with db.connect() as (cursor, conn):
-      for id in marked1_ids:
-        model.update_resource(cursor, id, meta="NEW_RES")
-      for id in marked2_ids:
-        model.update_resource(cursor, id, hash=b"HASH2")
+      for resource in marked_resources1:
+        model.update_resource(cursor, resource.id, meta="NEW_RES")
+      for resource in marked_resources2:
+        model.update_resource(cursor, resource.id, hash=b"HASH2")
       conn.commit()
 
     with db.connect() as (cursor, _):
@@ -208,8 +208,8 @@ class TestFrameworkModel(unittest.TestCase):
       ])
 
     with db.connect() as (cursor, conn):
-      for id in marked1_ids:
-        model.remove_resource(cursor, id)
+      for resource in marked_resources1:
+        model.remove_resource(cursor, resource.id)
       conn.commit()
 
     with db.connect() as (cursor, _):
@@ -298,7 +298,7 @@ class TestFrameworkModel(unittest.TestCase):
         cursor=cursor,
         resource_hash=b"HASH2",
       )]
-      self.assertListEqual(ids1, [task1.id, task2.id])
+      self.assertListEqual(ids1, [task1.id])
       self.assertListEqual(ids2, [task2.id])
 
       got_task = model.get_task(cursor)
