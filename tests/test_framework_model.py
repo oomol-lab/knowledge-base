@@ -11,6 +11,7 @@ from knbase.framework.knowledge_base_model import KnowledgeBaseModel
 from knbase.framework.module_context import ModuleContext
 from knbase.framework.resource_model import ResourceModel
 from knbase.framework.document_model import Document, DocumentModel
+from knbase.framework.task_model import IndexTaskOperation, TaskModel
 from knbase.module import (
   ResourceModule,
   PreprocessingModule,
@@ -385,6 +386,165 @@ class TestFrameworkModel(unittest.TestCase):
       self.assertEqual(1, model.get_document_refs_count(cursor, document1))
       self.assertEqual(1, model.get_document_refs_count(cursor, document2))
       self.assertEqual(1, model.get_document_refs_count(cursor, document3))
+
+  def test_preproc_task_models(self):
+    db, ctx, resource_module, preproc_module, _ = _create_variables("test_preproc_tasks.sqlite3")
+    knbase_model = KnowledgeBaseModel(ctx)
+    model = TaskModel(ctx)
+
+    with db.connect() as (cursor, conn):
+      knbase: KnowledgeBase = knbase_model.create_knowledge_base(
+        cursor=cursor,
+        resource_module=resource_module,
+        resource_params=None,
+        records=[],
+      )
+      conn.commit()
+
+    with db.connect() as (cursor, conn):
+      preproc_task1 = model.create_preproc_task(
+        cursor=cursor,
+        event_id=1,
+        preproc_module=preproc_module,
+        base=knbase,
+        resource_hash=b"HASH1",
+        from_resource_hash=None,
+        path=Path("/path/to/file1"),
+      )
+      preproc_task2 = model.create_preproc_task(
+        cursor=cursor,
+        event_id=1,
+        preproc_module=preproc_module,
+        base=knbase,
+        resource_hash=b"HASH2",
+        from_resource_hash=b"HASH1",
+        path=Path("/path/to/file1"),
+      )
+      conn.commit()
+
+    with db.connect() as (cursor, _):
+      preproc_tasks = list(model.get_preproc_tasks(cursor, knbase))
+      preproc_tasks = sorted([t.id for t in preproc_tasks])
+      self.assertListEqual(preproc_tasks, [
+        preproc_task1.id,
+        preproc_task2.id,
+      ])
+      self.assertEqual(2, model.count_resource_refs(
+        cursor=cursor,
+        preproc_module=preproc_module,
+        base=knbase,
+        resource_hash=b"HASH1",
+      ))
+      self.assertEqual(1, model.count_resource_refs(
+        cursor=cursor,
+        preproc_module=preproc_module,
+        base=knbase,
+        resource_hash=b"HASH2",
+      ))
+
+    with db.connect() as (cursor, conn):
+      model.remove_preproc_task(cursor, preproc_task2)
+      conn.commit()
+
+    with db.connect() as (cursor, _):
+      preproc_tasks = list(model.get_preproc_tasks(cursor, knbase))
+      preproc_tasks = sorted([t.id for t in preproc_tasks])
+      self.assertListEqual(preproc_tasks, [preproc_task1.id])
+      self.assertEqual(1, model.count_resource_refs(
+        cursor=cursor,
+        preproc_module=preproc_module,
+        base=knbase,
+        resource_hash=b"HASH1",
+      ))
+      self.assertEqual(0, model.count_resource_refs(
+        cursor=cursor,
+        preproc_module=preproc_module,
+        base=knbase,
+        resource_hash=b"HASH2",
+      ))
+
+  def test_index_task_models(self):
+    db, ctx, resource_module, preproc_module, index_module = _create_variables("test_index_task.sqlite3")
+    knbase_model = KnowledgeBaseModel(ctx)
+    model = TaskModel(ctx)
+    doc_model = DocumentModel(ctx)
+
+    with db.connect() as (cursor, conn):
+      knbase: KnowledgeBase = knbase_model.create_knowledge_base(
+        cursor=cursor,
+        resource_module=resource_module,
+        resource_params=None,
+        records=[],
+      )
+      conn.commit()
+
+    with db.connect() as (cursor, conn):
+      document1 = doc_model.append_document(
+        cursor=cursor,
+        preprocessing_module=preproc_module,
+        base=knbase,
+        resource_hash=b"HASH1",
+        document_hash=b"DOC-HASH1",
+        path=Path("/path/to/file1"),
+        meta="META",
+      )
+      document2 = doc_model.append_document(
+        cursor=cursor,
+        preprocessing_module=preproc_module,
+        base=knbase,
+        resource_hash=b"HASH2",
+        document_hash=b"DOC-HASH2",
+        path=Path("/path/to/file2"),
+        meta="META",
+      )
+      index_task1 = model.create_index_task(
+        cursor=cursor,
+        event_id=1,
+        index_module=index_module,
+        document=document1,
+        operation=IndexTaskOperation.CREATE,
+      )
+      index_task2 = model.create_index_task(
+        cursor=cursor,
+        event_id=2,
+        index_module=index_module,
+        document=document2,
+        operation=IndexTaskOperation.REMOVE,
+      )
+      conn.commit()
+
+    with db.connect() as (cursor, _):
+      index_tasks = list(model.get_index_tasks(cursor))
+      index_tasks = sorted([t.id for t in index_tasks])
+      self.assertListEqual(index_tasks, [
+        index_task1.id,
+        index_task2.id,
+      ])
+      self.assertEqual(1, model.count_document_refs(
+        cursor=cursor,
+        document=document1,
+      ))
+      self.assertEqual(1, model.count_document_refs(
+        cursor=cursor,
+        document=document2,
+      ))
+
+    with db.connect() as (cursor, conn):
+      model.remove_index_task(cursor, index_task2)
+      conn.commit()
+
+    with db.connect() as (cursor, _):
+      index_tasks = list(model.get_index_tasks(cursor))
+      index_tasks = sorted([t.id for t in index_tasks])
+      self.assertListEqual(index_tasks, [index_task1.id])
+      self.assertEqual(1, model.count_document_refs(
+        cursor=cursor,
+        document=document1,
+      ))
+      self.assertEqual(0, model.count_document_refs(
+        cursor=cursor,
+        document=document2,
+      ))
 
 def _create_variables(file_name: str):
   db_path = _ensure_db_file_not_exist(file_name)

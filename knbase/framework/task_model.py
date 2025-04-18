@@ -176,7 +176,7 @@ class TaskModel:
     count: int = 0
     for field in ("res_hash", "from_res_hash"):
       cursor.execute(
-        f"SELECT COUNT(*) FROM preproc_tasks WHERE preproc_module = ?, knbase = ? AND {field} = ?",
+        f"SELECT COUNT(*) FROM preproc_tasks WHERE preproc_module = ? AND knbase = ? AND {field} = ?",
         (
           self._ctx.module_id(preproc_module),
           base.id,
