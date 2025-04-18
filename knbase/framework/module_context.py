@@ -1,6 +1,6 @@
 from enum import Enum
-from sqlite3 import Cursor
 from typing import Iterable
+from sqlite3 import Cursor
 
 from .common import FRAMEWORK_DB
 from ..sqlite3_pool import register_table_creators

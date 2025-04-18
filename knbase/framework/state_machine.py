@@ -15,7 +15,8 @@ from .common import FRAMEWORK_DB
 from .module_context import ModuleContext
 from .knowledge_base_model import KnowledgeBase, KnowledgeBaseModel
 from .resource_model import ResourceModel
-from .document_model import DocumentModel, Task, TaskReason, IndexTask, IndexTaskOperation
+from .document_model import DocumentModel
+from .task_model import Task, TaskReason, TaskModel, IndexTask, IndexTaskOperation
 
 class PreprocessEvent:
   task_id: int
@@ -51,11 +52,12 @@ class StateMachine:
       self._base_model: KnowledgeBaseModel = KnowledgeBaseModel(model_context)
       self._resource_model: ResourceModel = ResourceModel(model_context)
       self._document_model: DocumentModel = DocumentModel(model_context)
+      self._task_model: TaskModel = TaskModel(model_context)
       self._preproc_events_queue: list[PreprocessEvent] = []
       self._index_events_queue: list[HandleIndexEvent] = []
       self._state: StateMachineState = StateMachineState.SETTING
 
-      for task in self._document_model.get_tasks(cursor):
+      for task in self._task_model.get_tasks(cursor):
         self._register_preprocess_events(task)
         self._register_handle_index_events(task, task.index_tasks)
       conn.commit()
@@ -223,13 +225,13 @@ class StateMachine:
       elif last_task.reason == TaskReason.UPDATE:
         submit_reason = TaskReason.UPDATE
 
-      self._document_model.remove_task(cursor, last_task)
+      self._task_model.remove_task(cursor, last_task)
       self._remove_events_associated_with_task(last_task)
 
     if submit_reason is None:
       return
 
-    task = self._document_model.create_task(
+    task = self._task_model.create_task(
       cursor=cursor,
       event_id=event_id,
       resource_path=resource_path,
@@ -237,7 +239,7 @@ class StateMachine:
       resource_module=base.resource_module,
       from_resource_hash=from_resource_hash,
     )
-    task = self._document_model.go_to_preprocess(
+    task = self._task_model.go_to_preprocess(
       cursor=cursor,
       task=task,
       reason=submit_reason,
@@ -262,11 +264,11 @@ class StateMachine:
       # If creation and deletion meet, they will be canceled directly.
       # Otherwise, it means there is a deletion task, so no operation is required.
       if last_task.reason in (TaskReason.CREATE, TaskReason.UPDATE):
-        self._document_model.remove_task(cursor, last_task)
+        self._task_model.remove_task(cursor, last_task)
         self._remove_events_associated_with_task(last_task)
 
     else:
-      task = self._document_model.create_task(
+      task = self._task_model.create_task(
         cursor=cursor,
         event_id=event_id,
         resource_path=Path(),
@@ -274,7 +276,7 @@ class StateMachine:
         resource_module=resource_module,
         from_resource_hash=None,
       )
-      task = self._document_model.go_to_remove(
+      task = self._task_model.go_to_remove(
         cursor=cursor,
         task=task,
         index_modules=base.index_modules,
@@ -327,14 +329,14 @@ class StateMachine:
       knbase=knbase,
       hash=hash,
     )
-    count += self._document_model.count_resource_hash_refs(
+    count += self._task_model.count_resource_hash_refs(
       cursor=cursor,
       resource_hash=hash,
     )
     return count
 
   def _last_defined_task(self, cursor: Cursor, resource_hash: bytes) -> None | Task:
-    for task in self._document_model.get_tasks(cursor, resource_hash):
+    for task in self._task_model.get_tasks(cursor, resource_hash):
       if task.reason != TaskReason.UNDEFINED:
         return task
     return None
