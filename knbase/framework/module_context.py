@@ -4,7 +4,7 @@ from typing import Iterable
 
 from .common import FRAMEWORK_DB
 from ..sqlite3_pool import register_table_creators
-from ..modules import Module, ResourceModule, PreprocessingModule, IndexModule
+from ..module import Module, ResourceModule, PreprocessingModule, IndexModule
 
 
 class _ModelStep(Enum):

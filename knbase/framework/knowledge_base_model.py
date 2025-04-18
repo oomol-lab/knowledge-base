@@ -1,5 +1,4 @@
 from __future__ import annotations
-from dataclasses import dataclass
 from typing import Any, Generator, Iterable
 from enum import Enum
 from json import dumps
@@ -9,37 +8,8 @@ from .common import FRAMEWORK_DB
 from .module_context import ModuleContext
 from ..utils import fetchmany
 from ..sqlite3_pool import register_table_creators
-from ..modules import ResourceBase, PreprocessingModule, IndexModule
+from ..module import KnowledgeBase, ResourceModule, ProcessRecord, PreprocessingModule, IndexModule
 
-
-@dataclass
-class KnowledgeBase:
-  id: int
-  resource_base: ResourceBase
-  resource_params: Any
-  process_records: list[ProcessRecord]
-
-  @property
-  def preproc_modules(self) -> list[PreprocessingModule]:
-    return [
-      record.module
-      for record in self.process_records
-      if isinstance(record.module, PreprocessingModule)
-    ]
-
-  @property
-  def index_modules(self) -> list[IndexModule]:
-    return [
-      record.module
-      for record in self.process_records
-      if isinstance(record.module, IndexModule)
-    ]
-
-@dataclass
-class ProcessRecord:
-  id: int
-  module: PreprocessingModule | IndexModule
-  params: Any
 
 class _ProcessKind(Enum):
   Preprocess = 0
@@ -51,17 +21,17 @@ class KnowledgeBaseModel:
 
   def get_knowledge_bases(self, cursor: Cursor) -> Generator[KnowledgeBase, None, None]:
     cursor.execute(
-      "SELECT id, res_base_id, params FROM knbases"
+      "SELECT id, res_module, res_params FROM knbases"
     )
     for row in fetchmany(cursor):
       knbase_id = row[0]
-      resource_base_id = row[1]
+      resource_module_id = row[1]
       resource_params = row[2]
-      resource_base = self._ctx.module(resource_base_id)
+      resource_module = self._ctx.module(resource_module_id)
       knbase = KnowledgeBase(
         id=knbase_id,
-        resource_base=resource_base,
         resource_params=resource_params,
+        resource_module=resource_module,
         process_records=[],
       )
       cursor.execute(
@@ -88,19 +58,22 @@ class KnowledgeBaseModel:
   def create_knowledge_base(
         self,
         cursor: Cursor,
-        resource_base: ResourceBase,
+        resource_module: ResourceModule,
         resource_params: Any,
         records: Iterable[tuple[PreprocessingModule | IndexModule, Any]],
       ) -> KnowledgeBase:
 
     cursor.execute(
-      "INSERT INTO knbases (res_base_id, params) VALUES (?, ?)",
-      (resource_base.id, dumps(resource_params)),
+      "INSERT INTO knbases (res_module, res_params) VALUES (?, ?)",
+      (
+        self._ctx.module_id(resource_module),
+        dumps(resource_params),
+      ),
     )
     knbase_id = cursor.lastrowid
     knbase = KnowledgeBase(
       id=knbase_id,
-      resource_base=resource_base,
+      resource_module=resource_module,
       resource_params=resource_params,
       process_records=[],
     )
@@ -128,18 +101,19 @@ class KnowledgeBaseModel:
     return knbase
 
   def update_resource_params(
-      self,
-      cursor: Cursor,
-      knbase: KnowledgeBase,
-      resource_params: Any,
-    ):
+        self,
+        cursor: Cursor,
+        knbase: KnowledgeBase,
+        resource_params: Any,
+      ) -> KnowledgeBase:
+
     cursor.execute(
       "UPDATE knbases SET params = ? WHERE id = ?",
       (dumps(obj=resource_params), knbase.id),
     )
     return KnowledgeBase(
       id=knbase.id,
-      resource_base=knbase.resource_base,
+      resource_module=knbase.resource_module,
       resource_params=resource_params,
       process_records=[*knbase.process_records],
     )
@@ -158,7 +132,7 @@ class KnowledgeBaseModel:
     )
     return KnowledgeBase(
       id=knbase.id,
-      resource_base=knbase.resource_base,
+      resource_module=knbase.resource_module,
       resource_params=knbase.resource_params,
       process_records=[
         ProcessRecord(
@@ -183,7 +157,7 @@ class KnowledgeBaseModel:
     )
     return KnowledgeBase(
       id=knbase.id,
-      resource_base=knbase.resource_base,
+      resource_module=knbase.resource_module,
       resource_params=knbase.resource_params,
       process_records=[
         r for r in knbase.process_records if r.id != record.id
@@ -194,8 +168,8 @@ def _create_tables(cursor: Cursor):
   cursor.execute("""
     CREATE TABLE knbases (
       id INTEGER PRIMARY KEY,
-      res_base_id INTEGER NOT NULL,
-      params TEXT NOT NULL
+      res_module INTEGER NOT NULL,
+      res_params TEXT NOT NULL
     )
   """)
 

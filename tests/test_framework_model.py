@@ -5,21 +5,30 @@ from io import BufferedReader
 from typing import Generator, Iterable
 from pathlib import Path
 
+from knbase.sqlite3_pool import SQLite3Pool
 from knbase.framework.common import FRAMEWORK_DB
+from knbase.framework.knowledge_base_model import KnowledgeBaseModel
 from knbase.framework.module_context import ModuleContext
 from knbase.framework.resource_model import ResourceModel
 from knbase.framework.document_model import DocumentModel, DocumentParams, IndexTaskOperation, TaskStep, TaskReason
-from knbase.modules import ResourceModule, PreprocessingModule, IndexModule
-from knbase.modules.preprocessing import Document, PreprocessingFile, PreprocessingResult
-from knbase.modules.resource import Resource, ResourceBase, ResourceEvent
-from knbase.sqlite3_pool import SQLite3Pool
+from knbase.module import (
+  ResourceModule,
+  PreprocessingModule,
+  IndexModule,
+  Document,
+  PreprocessingFile,
+  PreprocessingResult,
+  Resource,
+  ResourceEvent,
+  KnowledgeBase,
+)
 
 
 class _MyResourceModule(ResourceModule):
   def __init__(self):
     super().__init__("my_res")
 
-  def scan(self, base: ResourceBase) -> Generator[ResourceEvent, None, None]:
+  def scan(self, base: KnowledgeBase) -> Generator[ResourceEvent, None, None]:
     raise NotImplementedError()
 
   def open(self, resource: Resource) -> BufferedReader:
@@ -66,29 +75,30 @@ class TestFrameworkModel(unittest.TestCase):
 
   def test_resource_models(self):
     db, ctx, resource_module, _, _ = _create_variables("test_resources.sqlite3")
+    knbase_model = KnowledgeBaseModel(ctx)
     model = ResourceModel(ctx)
 
     with db.connect() as (cursor, conn):
-      base = model.create_resource_base(cursor, resource_module)
+      knbase = knbase_model.create_knowledge_base(
+        cursor=cursor,
+        resource_module=resource_module,
+        resource_params=None,
+        records=[],
+      )
       conn.commit()
-
-    with db.connect() as (cursor, _):
-      base2 = model.get_resource_base(cursor, base.id)
-      self.assertEqual(base2.id, base.id)
-      self.assertTrue(base2.module == resource_module)
 
     marked_resources1: list[Resource] = []
     marked_resources2: list[Resource] = []
 
     with db.connect() as (cursor, conn):
       self.assertEqual(
-        first=model.count_resources(cursor, base, b"HASH1"),
+        first=model.count_resources(cursor, knbase, b"HASH1"),
         second=0,
       )
       resource = Resource(
         id=1,
         hash=b"HASH1",
-        base=base,
+        base=knbase,
         content_type="text/plain",
         meta="RES1",
         updated_at=110,
@@ -98,21 +108,21 @@ class TestFrameworkModel(unittest.TestCase):
       marked_resources1.append(resource)
 
       self.assertEqual(resource.hash, b"HASH1")
-      self.assertEqual(resource.base.id, base.id)
-      self.assertTrue(resource.base.module == resource_module)
+      self.assertEqual(resource.base.id, knbase.id)
+      self.assertTrue(resource.base.resource_module == resource_module)
       self.assertEqual(resource.content_type, "text/plain")
       self.assertEqual(resource.meta, "RES1")
       self.assertEqual(resource.updated_at, 110)
 
     with db.connect() as (cursor, conn):
       self.assertEqual(
-        first=model.count_resources(cursor, base, b"HASH1"),
+        first=model.count_resources(cursor, knbase, b"HASH1"),
         second=1,
       )
       resource = Resource(
         id=2,
         hash=b"HASH1",
-        base=base,
+        base=knbase,
         content_type="text/plain",
         meta="RES2",
         updated_at=120,
@@ -122,21 +132,21 @@ class TestFrameworkModel(unittest.TestCase):
       marked_resources2.append(resource)
 
       self.assertEqual(resource.hash, b"HASH1")
-      self.assertEqual(resource.base.id, base.id)
-      self.assertTrue(resource.base.module == resource_module)
+      self.assertEqual(resource.base.id, knbase.id)
+      self.assertTrue(resource.base.resource_module == resource_module)
       self.assertEqual(resource.content_type, "text/plain")
       self.assertEqual(resource.meta, "RES2")
       self.assertEqual(resource.updated_at, 120)
 
     with db.connect() as (cursor, conn):
       self.assertEqual(
-        first=model.count_resources(cursor, base, b"HASH1"),
+        first=model.count_resources(cursor, knbase, b"HASH1"),
         second=2,
       )
       resource = Resource(
         id=3,
         hash=b"HASH3",
-        base=base,
+        base=knbase,
         content_type="text/plain",
         meta="RES3",
         updated_at=119,
@@ -146,20 +156,20 @@ class TestFrameworkModel(unittest.TestCase):
       marked_resources1.append(resource)
 
       self.assertEqual(resource.hash, b"HASH3")
-      self.assertEqual(resource.base.id, base.id)
-      self.assertTrue(resource.base.module == resource_module)
+      self.assertEqual(resource.base.id, knbase.id)
+      self.assertTrue(resource.base.resource_module == resource_module)
       self.assertEqual(resource.content_type, "text/plain")
       self.assertEqual(resource.meta, "RES3")
       self.assertEqual(resource.updated_at, 119)
 
     with db.connect() as (cursor, _):
       self.assertEqual(
-        first=model.count_resources(cursor, base, b"HASH1"),
+        first=model.count_resources(cursor, knbase, b"HASH1"),
         second=2,
       )
       data = [
         (r.hash, r.meta, r.updated_at)
-        for r in model.get_resources(cursor, base, b"HASH1")
+        for r in model.get_resources(cursor, knbase, b"HASH1")
       ]
       self.assertListEqual(data, [
         (b"HASH1", "RES2", 120),
@@ -177,28 +187,28 @@ class TestFrameworkModel(unittest.TestCase):
 
     with db.connect() as (cursor, _):
       self.assertEqual(
-        first=model.count_resources(cursor, base, b"HASH1"),
+        first=model.count_resources(cursor, knbase, b"HASH1"),
         second=1,
       )
       self.assertEqual(
-        first=model.count_resources(cursor, base, b"HASH2"),
+        first=model.count_resources(cursor, knbase, b"HASH2"),
         second=1,
       )
       self.assertEqual(
-        first=model.count_resources(cursor, base, b"HASH3"),
+        first=model.count_resources(cursor, knbase, b"HASH3"),
         second=1,
       )
       data1 = [
         (r.hash, r.meta, r.updated_at)
-        for r in model.get_resources(cursor, base, b"HASH1")
+        for r in model.get_resources(cursor, knbase, b"HASH1")
       ]
       data2 = [
         (r.hash, r.meta, r.updated_at)
-        for r in model.get_resources(cursor, base, b"HASH2")
+        for r in model.get_resources(cursor, knbase, b"HASH2")
       ]
       data3 = [
         (r.hash, r.meta, r.updated_at)
-        for r in model.get_resources(cursor, base, b"HASH3")
+        for r in model.get_resources(cursor, knbase, b"HASH3")
       ]
       self.assertListEqual(data1, [
         (b"HASH1", "NEW_RES", 110),
@@ -212,33 +222,33 @@ class TestFrameworkModel(unittest.TestCase):
 
     with db.connect() as (cursor, conn):
       for resource in marked_resources1:
-        model.remove_resource(cursor, resource.id)
+        model.remove_resource(cursor, knbase, resource.id)
       conn.commit()
 
     with db.connect() as (cursor, _):
       self.assertEqual(
-        first=model.count_resources(cursor, base, b"HASH1"),
+        first=model.count_resources(cursor, knbase, b"HASH1"),
         second=0,
       )
       self.assertEqual(
-        first=model.count_resources(cursor, base, b"HASH2"),
+        first=model.count_resources(cursor, knbase, b"HASH2"),
         second=1,
       )
       self.assertEqual(
-        first=model.count_resources(cursor, base, b"HASH3"),
+        first=model.count_resources(cursor, knbase, b"HASH3"),
         second=0,
       )
       data1 = [
         (r.hash, r.meta, r.updated_at)
-        for r in model.get_resources(cursor, base, b"HASH1")
+        for r in model.get_resources(cursor, knbase, b"HASH1")
       ]
       data2 = [
         (r.hash, r.meta, r.updated_at)
-        for r in model.get_resources(cursor, base, b"HASH2")
+        for r in model.get_resources(cursor, knbase, b"HASH2")
       ]
       data3 = [
         (r.hash, r.meta, r.updated_at)
-        for r in model.get_resources(cursor, base, b"HASH3")
+        for r in model.get_resources(cursor, knbase, b"HASH3")
       ]
       self.assertListEqual(data1, [])
       self.assertListEqual(data2, [

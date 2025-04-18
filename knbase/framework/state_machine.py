@@ -4,7 +4,7 @@ from sqlite3 import Cursor
 from typing import Any, Iterable, Generator
 
 from ..sqlite3_pool import SQLite3Pool
-from ..modules import (
+from ..module import (
   Module,
   Resource,
   ResourceModule,
@@ -14,7 +14,7 @@ from ..modules import (
 from .common import FRAMEWORK_DB
 from .module_context import ModuleContext
 from .knowledge_base_model import KnowledgeBase, KnowledgeBaseModel
-from .resource_model import ResourceModel, ResourceBase
+from .resource_model import ResourceModel
 from .document_model import DocumentModel, Task, TaskReason, IndexTask, IndexTaskOperation
 
 class PreprocessEvent:
@@ -76,10 +76,6 @@ class StateMachine:
       try:
         cursor.execute("BEGIN TRANSACTION")
         resource_module, resource_params = resource_param
-        resource_base = self._resource_model.create_resource_base(
-          cursor=cursor,
-          module=resource_module,
-        )
         records: Iterable[tuple[PreprocessingModule | IndexModule, Any]] = []
         for module, params in preproc_params:
           records.append((module, params))
@@ -88,7 +84,7 @@ class StateMachine:
 
         base = self._base_model.create_knowledge_base(
           cursor=cursor,
-          resource_base=resource_base,
+          resource_module=resource_module,
           resource_params=resource_params,
           records=records,
         )
@@ -111,8 +107,8 @@ class StateMachine:
     with self._db.connect() as (cursor, conn):
       try:
         cursor.execute("BEGIN TRANSACTION")
-        assert self._resource_model.get_resource(cursor, resource.id) is None
-        hash_refs = self._count_resource_hash(cursor, base.resource_base, resource.hash)
+        assert self._resource_model.get_resource(cursor, resource.base, resource.id) is None
+        hash_refs = self._count_resource_hash(cursor, base, resource.hash)
         self._resource_model.save_resource(cursor, resource)
         if hash_refs == 0:
           self._submit_task_hash_created(
@@ -142,9 +138,9 @@ class StateMachine:
     with self._db.connect() as (cursor, conn):
       try:
         cursor.execute("BEGIN TRANSACTION")
-        origin_resource = self._resource_model.get_resource(cursor, resource.id)
+        origin_resource = self._resource_model.get_resource(cursor, resource.base, resource.id)
         assert origin_resource is not None
-        hash_refs = self._count_resource_hash(cursor, base.resource_base, resource.hash)
+        hash_refs = self._count_resource_hash(cursor, base, resource.hash)
         self._resource_model.update_resource(
           cursor=cursor,
           origin_resource=origin_resource,
@@ -164,13 +160,13 @@ class StateMachine:
               resource_hash=resource.hash,
               from_resource_hash=origin_resource.hash,
             )
-          if self._count_resource_hash(cursor, base.resource_base, origin_resource.hash) == 0:
+          if self._count_resource_hash(cursor, base, origin_resource.hash) == 0:
             self._submit_task_hash_removed(
               cursor=cursor,
               event_id=event_id,
               base=base,
               resource_hash=origin_resource.hash,
-              resource_module=base.resource_base.module,
+              resource_module=base.resource_module,
             )
         conn.commit()
 
@@ -189,15 +185,15 @@ class StateMachine:
     with self._db.connect() as (cursor, conn):
       try:
         cursor.execute("BEGIN TRANSACTION")
-        assert self._resource_model.get_resource(cursor, resource.id) is not None
-        self._resource_model.remove_resource(cursor, resource.id)
-        if self._count_resource_hash(cursor, base.resource_base, resource.hash) == 0:
+        assert self._resource_model.get_resource(cursor, resource.base, resource.id) is not None
+        self._resource_model.remove_resource(cursor, resource.base, resource.id)
+        if self._count_resource_hash(cursor, base, resource.hash) == 0:
           self._submit_task_hash_removed(
             event_id=event_id,
             cursor=cursor,
             base=base,
             resource_hash=resource.hash,
-            resource_module=base.resource_base.module,
+            resource_module=base.resource_module,
           )
         conn.commit()
 
@@ -238,7 +234,7 @@ class StateMachine:
       event_id=event_id,
       resource_path=resource_path,
       resource_hash=resource_hash,
-      resource_module=base.resource_base.module,
+      resource_module=base.resource_module,
       from_resource_hash=from_resource_hash,
     )
     task = self._document_model.go_to_preprocess(
@@ -324,12 +320,12 @@ class StateMachine:
         created_at=index_task.created_at,
       ))
 
-  def _count_resource_hash(self, cursor: Cursor, resource_base: ResourceBase, hash: bytes) -> int:
+  def _count_resource_hash(self, cursor: Cursor, knbase: KnowledgeBase, hash: bytes) -> int:
     count: int = 0
     count += self._resource_model.count_resources(
       cursor=cursor,
+      knbase=knbase,
       hash=hash,
-      resource_base=resource_base,
     )
     count += self._document_model.count_resource_hash_refs(
       cursor=cursor,
