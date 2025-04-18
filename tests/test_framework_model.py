@@ -10,7 +10,7 @@ from knbase.framework.common import FRAMEWORK_DB
 from knbase.framework.knowledge_base_model import KnowledgeBaseModel
 from knbase.framework.module_context import ModuleContext
 from knbase.framework.resource_model import ResourceModel
-from knbase.framework.document_model import Document
+from knbase.framework.document_model import Document, DocumentModel
 from knbase.module import (
   ResourceModule,
   PreprocessingModule,
@@ -78,7 +78,7 @@ class TestFrameworkModel(unittest.TestCase):
     model = ResourceModel(ctx)
 
     with db.connect() as (cursor, conn):
-      knbase = knbase_model.create_knowledge_base(
+      knbase: KnowledgeBase = knbase_model.create_knowledge_base(
         cursor=cursor,
         resource_module=resource_module,
         resource_params=None,
@@ -254,6 +254,137 @@ class TestFrameworkModel(unittest.TestCase):
         (b"HASH2", "RES2", 120),
       ])
       self.assertListEqual(data3, [])
+
+  def test_document_models(self):
+    db, ctx, resource_module, preproc_module, _ = _create_variables("test_documents.sqlite3")
+    knbase_model = KnowledgeBaseModel(ctx)
+    model = DocumentModel(ctx)
+
+    with db.connect() as (cursor, conn):
+      knbase: KnowledgeBase = knbase_model.create_knowledge_base(
+        cursor=cursor,
+        resource_module=resource_module,
+        resource_params=None,
+        records=[],
+      )
+      conn.commit()
+
+    resource_key1 = (preproc_module, knbase, "HASH-1")
+    resource_key2 = (preproc_module, knbase, "HASH-2")
+
+    with db.connect() as (cursor, conn):
+      document1 = model.append_document(
+        cursor=cursor,
+        preprocessing_module=resource_key1[0],
+        base=resource_key1[1],
+        resource_hash=resource_key1[2],
+        document_hash=b"DOCUMENT-HASH-1",
+        path="/path/to/document1",
+        meta="META",
+      )
+      document2 = model.append_document(
+        cursor=cursor,
+        preprocessing_module=resource_key1[0],
+        base=resource_key1[1],
+        resource_hash=resource_key1[2],
+        document_hash=b"DOCUMENT-HASH-2",
+        path="/path/to/document2",
+        meta="META",
+      )
+      document3 = model.append_document(
+        cursor=cursor,
+        preprocessing_module=resource_key2[0],
+        base=resource_key2[1],
+        resource_hash=resource_key2[2],
+        document_hash=b"DOCUMENT-HASH-3",
+        path="/path/to/document3",
+        meta="META",
+      )
+      conn.commit()
+
+    with db.connect() as (cursor, _):
+      self.assertNotEqual(document1.id, document2.id)
+      self.assertNotEqual(document1.id, document3.id)
+      self.assertNotEqual(document2.id, document3.id)
+      self.assertEqual(1, model.get_document_refs_count(cursor, document1))
+      self.assertEqual(1, model.get_document_refs_count(cursor, document2))
+      self.assertEqual(1, model.get_document_refs_count(cursor, document3))
+      self.assertListEqual(
+        list1=[document1.id, document2.id],
+        list2=[d.id for d in model.get_documents(
+          cursor=cursor,
+          preprocessing_module=resource_key1[0],
+          base=resource_key1[1],
+          resource_hash=resource_key1[2],
+        )],
+      )
+      self.assertListEqual(
+        list1=[document3.id],
+        list2=[d.id for d in model.get_documents(
+          cursor=cursor,
+          preprocessing_module=resource_key2[0],
+          base=resource_key2[1],
+          resource_hash=resource_key2[2],
+        )],
+      )
+
+    with db.connect() as (cursor, conn):
+      model.append_document(
+        cursor=cursor,
+        preprocessing_module=resource_key1[0],
+        base=resource_key1[1],
+        resource_hash=resource_key1[2],
+        document_hash=b"DOCUMENT-HASH-3",
+        path="/path/to/new-file-1",
+        meta="META",
+      )
+      model.append_document(
+        cursor=cursor,
+        preprocessing_module=resource_key2[0],
+        base=resource_key2[1],
+        resource_hash=resource_key2[2],
+        document_hash=b"DOCUMENT-HASH-2",
+        path="/path/to/new-file-2",
+        meta="META",
+      )
+      conn.commit()
+
+    with db.connect() as (cursor, _):
+      self.assertEqual(1, model.get_document_refs_count(cursor, document1))
+      self.assertEqual(2, model.get_document_refs_count(cursor, document2))
+      self.assertEqual(2, model.get_document_refs_count(cursor, document3))
+      self.assertListEqual(
+        list1=[document1.id, document2.id, document3.id],
+        list2=[d.id for d in model.get_documents(
+          cursor=cursor,
+          preprocessing_module=resource_key1[0],
+          base=resource_key1[1],
+          resource_hash=resource_key1[2],
+        )],
+      )
+      self.assertListEqual(
+        list1=[document2.id, document3.id],
+        list2=[d.id for d in model.get_documents(
+          cursor=cursor,
+          preprocessing_module=resource_key2[0],
+          base=resource_key2[1],
+          resource_hash=resource_key2[2],
+        )],
+      )
+
+    with db.connect() as (cursor, conn):
+      model.remove_references_from_resource(
+        cursor=cursor,
+        preprocessing_module=resource_key2[0],
+        base=resource_key2[1],
+        resource_hash=resource_key2[2],
+      )
+      conn.commit()
+
+    with db.connect() as (cursor, _):
+      self.assertEqual(1, model.get_document_refs_count(cursor, document1))
+      self.assertEqual(1, model.get_document_refs_count(cursor, document2))
+      self.assertEqual(1, model.get_document_refs_count(cursor, document3))
 
 def _create_variables(file_name: str):
   db_path = _ensure_db_file_not_exist(file_name)

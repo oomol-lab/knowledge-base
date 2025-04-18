@@ -27,9 +27,9 @@ class DocumentModel:
 
   def get_document_refs_count(self, cursor: Cursor, document: Document) -> int:
     cursor.execute(
-        "SELECT COUNT(*) FROM document_refs WHERE ref = ?",
-        (document.id),
-      )
+      "SELECT COUNT(*) FROM document_refs WHERE ref = ?",
+      (document.id,),
+    )
     row = cursor.fetchone()
     if row is None:
       return 0
@@ -45,8 +45,8 @@ class DocumentModel:
 
     cursor.execute(
       """
-      SELECT id, doc_hash, path, meta FROM documents
-      WHERE preproc_module = ? AND knbase = ? AND res_hash = ?
+      SELECT ref FROM document_refs
+      WHERE preproc_module =? AND knbase = ? AND res_hash = ?
       """,
       (
         self._ctx.module_id(preprocessing_module),
@@ -55,16 +55,26 @@ class DocumentModel:
       ),
     )
     for row in fetchmany(cursor):
-      document_id, document_hash, path, meta_text = row
-      yield Document(
-        id=document_id,
-        preprocessing_module=preprocessing_module,
-        base=base,
-        resource_hash=resource_hash,
-        document_hash=document_hash,
-        path=Path(path),
-        meta=loads(meta_text),
+      document_id = row[0]
+      cursor.execute(
+        """
+        SELECT preproc_module, doc_hash, path, meta FROM documents
+        WHERE id = ? LIMIT 1
+        """,
+        (document_id,),
       )
+      row = cursor.fetchone()
+      if row is not None:
+        preproc_module, document_hash, path, meta_text = row
+        yield Document(
+          id=document_id,
+          preprocessing_module=self._ctx.module(preproc_module),
+          base=base,
+          resource_hash=resource_hash,
+          document_hash=document_hash,
+          path=Path(path),
+          meta=loads(meta_text),
+        )
 
   def append_document(
         self,
@@ -117,14 +127,33 @@ class DocumentModel:
       document_id = cursor.lastrowid
 
     cursor.execute(
-      "INSERT INTO document_refs (ref, res_hash, path, meta) VALUES (?, ?, ?, ?)",
+      """
+      SELECT id FROM document_refs WHERE preproc_module = ?
+      AND knbase = ? AND res_hash = ? AND doc_hash = ?
+      """,
       (
-        document_id,
+        self._ctx.module_id(preprocessing_module),
+        base.id,
         resource_hash,
-        str(path),
-        dumps(meta),
+        document_hash,
       ),
     )
+    if cursor.fetchone() is None:
+      cursor.execute(
+        """
+        INSERT INTO document_refs (preproc_module, knbase, res_hash, doc_hash, ref, path, meta)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+          self._ctx.module_id(preprocessing_module),
+          base.id,
+          resource_hash,
+          document_hash,
+          document_id,
+          str(path),
+          dumps(meta),
+        ),
+      )
     return Document(
       id=document_id,
       preprocessing_module=preprocessing_module,
@@ -185,15 +214,22 @@ def _create_tables(cursor: Cursor):
   cursor.execute("""
     CREATE TABLE document_refs (
       id INTEGER PRIMARY KEY,
-      ref INTEGER,
+      preproc_module INTEGER,
+      knbase INTEGER,
+      doc_hash TEXT,
       res_hash BLOB,
+      ref INTEGER,
       path TEXT NOT NULL,
       meta TEXT NOT NULL
     )
   """)
 
   cursor.execute("""
-    CREATE INDEX idx_document_ref ON document_refs (ref)
+    CREATE INDEX idx_document_ref ON document_refs (preproc_module, knbase, res_hash, doc_hash)
+  """)
+
+  cursor.execute("""
+    CREATE INDEX idx_ref_document_ref ON document_refs (ref)
   """)
 
 register_table_creators(FRAMEWORK_DB, _create_tables)
