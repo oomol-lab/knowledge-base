@@ -8,7 +8,7 @@ from pathlib import Path
 from knbase.framework.common import FRAMEWORK_DB
 from knbase.framework.module_context import ModuleContext
 from knbase.framework.resource_model import ResourceModel
-from knbase.framework.document_model import DocumentModel, DocumentParams, IndexTaskOperation, TaskStep
+from knbase.framework.document_model import DocumentModel, DocumentParams, IndexTaskOperation, TaskStep, TaskReason
 from knbase.modules import ResourceModule, PreprocessingModule, IndexModule
 from knbase.modules.preprocessing import Document, PreprocessingFile, PreprocessingResult
 from knbase.modules.resource import Resource, ResourceBase, ResourceEvent
@@ -310,7 +310,12 @@ class TestFrameworkModel(unittest.TestCase):
       self.assertEqual(got_task.id, task2.id)
 
     with db.connect() as (cursor, conn):
-      model.go_to_preprocess(cursor, task1, (preproc_module,))
+      model.go_to_preprocess(
+        cursor=cursor,
+        task=task1,
+        reason=TaskReason.CREATE,
+        preproc_modules=(preproc_module,),
+      )
       conn.commit()
 
     with db.connect() as (cursor, _):

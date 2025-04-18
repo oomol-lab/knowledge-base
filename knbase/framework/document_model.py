@@ -36,6 +36,7 @@ class Task:
   resource_module: ResourceModule
   from_resource_hash: bytes | None
   step: TaskStep
+  reason: TaskReason
   preprocessing_tasks: list[PreprocessingTask]
   index_tasks: list[IndexTask]
   created_at: int
@@ -44,6 +45,12 @@ class TaskStep(Enum):
   READY = 0
   PROCESSING = 1
   COMPLETED = 2
+
+class TaskReason(Enum):
+  UNDEFINED = 0
+  CREATE = 1
+  UPDATE = 2
+  REMOVE = 3
 
 @dataclass
 class PreprocessingTask:
@@ -98,14 +105,14 @@ class DocumentModel:
     if len(unexpected_tasks_ids) == 0:
       cursor.execute(
         """
-          SELECT id, event, res_path, res_hash, res_module, from_res_hash, step, created_at
+          SELECT id, event, res_path, res_hash, res_module, from_res_hash, step, reason, created_at
           FROM tasks ORDER BY created_at LIMIT 1
         """
       )
     else:
       cursor.execute(
         """
-          SELECT id, event, res_path, res_hash, res_module, from_res_hash, step, created_at
+          SELECT id, event, res_path, res_hash, res_module, from_res_hash, step, reason, created_at
           FROM tasks WHERE id NOT IN ({}) ORDER BY created_at LIMIT 1
         """.format(
           ", ".join("?" for _ in unexpected_tasks_ids)
@@ -130,19 +137,27 @@ class DocumentModel:
         res_count += row[0]
     return res_count
 
-  def get_tasks(self, cursor: Cursor, resource_hash: bytes) -> Generator[Task, None, None]:
-    cursor.execute(
-      """
-      SELECT id, event, res_path, res_hash, res_module, from_res_hash, step, created_at
-      FROM tasks WHERE res_hash = ? ORDER BY id DESC
-      """,
-      (resource_hash,),
-    )
+  def get_tasks(self, cursor: Cursor, resource_hash: bytes | None = None) -> Generator[Task, None, None]:
+    if resource_hash is None:
+      cursor.execute(
+        """
+        SELECT id, event, res_path, res_hash, res_module, from_res_hash, step, reason, created_at
+        FROM tasks ORDER BY id
+        """
+      )
+    else:
+      cursor.execute(
+        """
+        SELECT id, event, res_path, res_hash, res_module, from_res_hash, step, reason, created_at
+        FROM tasks WHERE res_hash = ? ORDER BY id
+        """,
+        (resource_hash,),
+      )
     for row in fetchmany(cursor):
       yield self._build_task_with_row(cursor, row)
 
   def _build_task_with_row(self, cursor: Cursor, row: Any):
-    task_id, event_id, resource_path, resource_hash, resource_module, from_res_hash, step, created_at = row
+    task_id, event_id, resource_path, resource_hash, resource_module, from_res_hash, step, reason, created_at = row
     task = Task(
       id=task_id,
       event_id=event_id,
@@ -151,6 +166,7 @@ class DocumentModel:
       resource_module=self._ctx.module(resource_module),
       from_resource_hash=from_res_hash,
       step=TaskStep(step),
+      reason=TaskReason(reason),
       preprocessing_tasks=[],
       index_tasks=[],
       created_at=created_at,
@@ -196,9 +212,13 @@ class DocumentModel:
       ) -> Task:
 
     step = TaskStep.READY
+    reason = TaskReason.UNDEFINED
     created_at = int(time() * 1000)
     cursor.execute(
-      "INSERT INTO tasks (event, res_path, res_hash, res_module, from_res_hash, step, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      """
+      INSERT INTO tasks (event, res_path, res_hash, res_module, from_res_hash, step, reason, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      """,
       (
         event_id,
         str(resource_path),
@@ -206,6 +226,7 @@ class DocumentModel:
         self._ctx.module_id(resource_module),
         from_resource_hash,
         step.value,
+        reason.value,
         created_at,
       ),
     )
@@ -218,6 +239,7 @@ class DocumentModel:
       resource_module=resource_module,
       from_resource_hash=from_resource_hash,
       step=step,
+      reason=reason,
       preprocessing_tasks=[],
       index_tasks=[],
       created_at=created_at,
@@ -267,9 +289,10 @@ class DocumentModel:
           ),
         )
     cursor.execute(
-      "UPDATE tasks SET step = ? WHERE id = ?",
+      "UPDATE tasks SET step = ?, reason = ? WHERE id = ?",
       (
         TaskStep.PROCESSING.value,
+        TaskReason.REMOVE.value,
         task.id,
       ),
     )
@@ -281,6 +304,7 @@ class DocumentModel:
       resource_module=task.resource_module,
       from_resource_hash=task.from_resource_hash,
       step=TaskStep.PROCESSING,
+      reason=TaskReason.REMOVE,
       preprocessing_tasks=[],
       index_tasks=index_tasks,
       created_at=task.created_at,
@@ -290,14 +314,15 @@ class DocumentModel:
         self,
         cursor: Cursor,
         task: Task,
-        modules: Iterable[PreprocessingModule],
+        reason: TaskReason.CREATE | TaskReason.UPDATE,
+        preproc_modules: Iterable[PreprocessingModule],
       ) -> Task:
 
     created_at = int(time() * 1000)
     preprocessing_tasks: list[PreprocessingTask] = []
     assert task.step == TaskStep.READY
 
-    for module in modules:
+    for module in preproc_modules:
       module_id = self._ctx.module_id(module)
       cursor.execute(
         "INSERT INTO preproc_tasks (parent, preproc_module, created_at) VALUES (?, ?, ?)",
@@ -316,9 +341,10 @@ class DocumentModel:
         ),
       )
     cursor.execute(
-      "UPDATE tasks SET step = ? WHERE id = ?",
+      "UPDATE tasks SET step = ?, reason = ? WHERE id = ?",
       (
         TaskStep.PROCESSING.value,
+        reason.value,
         task.id,
       ),
     )
@@ -330,6 +356,7 @@ class DocumentModel:
       resource_module=task.resource_module,
       from_resource_hash=task.from_resource_hash,
       step=TaskStep.PROCESSING,
+      reason=reason,
       preprocessing_tasks=preprocessing_tasks,
       index_tasks=[],
       created_at=task.created_at,
@@ -392,6 +419,7 @@ class DocumentModel:
       resource_module=task.resource_module,
       from_resource_hash=task.from_resource_hash,
       step=TaskStep.PROCESSING,
+      reason=task.reason,
       preprocessing_tasks=preprocessing_tasks,
       index_tasks=index_tasks,
       created_at=task.created_at,
@@ -450,6 +478,7 @@ class DocumentModel:
       resource_hash=task.resource_hash,
       resource_module=task.resource_module,
       step=TaskStep.PROCESSING,
+      reason=task.reason,
       from_resource_hash=task.from_resource_hash,
       preprocessing_tasks=task.preprocessing_tasks,
       index_tasks=remain_index_tasks,
@@ -581,6 +610,7 @@ def _create_tables(cursor: Cursor):
       res_module INTEGER NOT NULL,
       from_res_hash BLOB NULL,
       step INTEGER NOT NULL,
+      reason INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     )
   """)

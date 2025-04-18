@@ -19,6 +19,22 @@ class KnowledgeBase:
   resource_params: Any
   process_records: list[ProcessRecord]
 
+  @property
+  def preproc_modules(self) -> list[PreprocessingModule]:
+    return [
+      record.module
+      for record in self.process_records
+      if isinstance(record.module, PreprocessingModule)
+    ]
+
+  @property
+  def index_modules(self) -> list[IndexModule]:
+    return [
+      record.module
+      for record in self.process_records
+      if isinstance(record.module, IndexModule)
+    ]
+
 @dataclass
 class ProcessRecord:
   id: int
