@@ -17,13 +17,23 @@ class Document:
   preprocessing_module: PreprocessingModule
   base: KnowledgeBase
   resource_hash: bytes
-  document_hash: bytes # 不会作为唯一性判定，仅供 preprocess 参考以去重
+  document_hash: bytes
   path: Path
   meta: Any
 
 class DocumentModel:
   def __init__(self, modules_context: ModuleContext):
     self._ctx: ModuleContext = modules_context
+
+  def get_document_refs_count(self, cursor: Cursor, document: Document) -> int:
+    cursor.execute(
+        "SELECT COUNT(*) FROM document_refs WHERE ref = ?",
+        (document.id),
+      )
+    row = cursor.fetchone()
+    if row is None:
+      return 0
+    return row[0]
 
   def get_documents(
         self,
@@ -56,7 +66,7 @@ class DocumentModel:
         meta=loads(meta_text),
       )
 
-  def create_document(
+  def append_document(
         self,
         cursor: Cursor,
         preprocessing_module: PreprocessingModule,
@@ -68,22 +78,55 @@ class DocumentModel:
       ) -> Document:
 
     cursor.execute(
-      """
-      INSERT INTO documents (
-        preproc_module, knbase, res_hash, doc_hash, path, meta
-      ) VALUES (?, ?, ?, ?, ?, ?)
-      """,
+      "SELECT id FROM documents WHERE preproc_module = ? AND knbase = ? AND doc_hash = ?",
       (
         self._ctx.module_id(preprocessing_module),
         base.id,
-        resource_hash,
         document_hash,
+      ),
+    )
+    document_id: int
+    row = cursor.fetchone()
+
+    if row is not None:
+      document_id = row[0]
+      cursor.execute(
+        "UPDATE documents SET res_hash = ?, path = ?, meta = ? WHERE id = ?",
+        (
+          resource_hash,
+          str(path),
+          dumps(meta),
+          document_id,
+        ),
+      )
+    else:
+      cursor.execute(
+        """
+        INSERT INTO documents (preproc_module, knbase, doc_hash, res_hash, path, meta)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+          self._ctx.module_id(preprocessing_module),
+          base.id,
+          document_hash,
+          resource_hash,
+          str(path),
+          dumps(meta),
+        ),
+      )
+      document_id = cursor.lastrowid
+
+    cursor.execute(
+      "INSERT INTO document_refs (ref, res_hash, path, meta) VALUES (?, ?, ?, ?)",
+      (
+        document_id,
+        resource_hash,
         str(path),
         dumps(meta),
       ),
     )
     return Document(
-      id=cursor.lastrowid,
+      id=document_id,
       preprocessing_module=preprocessing_module,
       base=base,
       resource_hash=resource_hash,
@@ -92,13 +135,13 @@ class DocumentModel:
       meta=meta,
     )
 
-  def remove_document(self, cursor: Cursor, document_id: int) -> None:
+  def remove_document(self, cursor: Cursor, document: Document):
     cursor.execute(
       "DELETE FROM documents WHERE id = ?",
-      (document_id,),
+      (document.id,),
     )
 
-  def remove_documents(
+  def remove_references_from_resource(
         self,
         cursor: Cursor,
         preprocessing_module: PreprocessingModule,
@@ -108,7 +151,7 @@ class DocumentModel:
 
     cursor.execute(
       """
-      DELETE FROM documents
+      DELETE FROM document_refs
       WHERE preproc_module = ? AND knbase = ? AND res_hash = ?
       """,
       (
@@ -124,15 +167,33 @@ def _create_tables(cursor: Cursor):
       id INTEGER PRIMARY KEY,
       preproc_module INTEGER,
       knbase INTEGER,
-      res_hash BLOB,
       doc_hash TEXT,
+      res_hash BLOB,
       path TEXT NOT NULL,
       meta TEXT NOT NULL
     )
   """)
 
   cursor.execute("""
-    CREATE INDEX idx_document ON documents (preproc_module, knbase, res_hash)
+    CREATE INDEX idx_document ON documents (preproc_module, knbase, doc_hash)
+  """)
+
+  cursor.execute("""
+    CREATE INDEX idx_res_document ON documents (preproc_module, knbase, res_hash)
+  """)
+
+  cursor.execute("""
+    CREATE TABLE document_refs (
+      id INTEGER PRIMARY KEY,
+      ref INTEGER,
+      res_hash BLOB,
+      path TEXT NOT NULL,
+      meta TEXT NOT NULL
+    )
+  """)
+
+  cursor.execute("""
+    CREATE INDEX idx_document_ref ON document_refs (ref)
   """)
 
 register_table_creators(FRAMEWORK_DB, _create_tables)

@@ -16,7 +16,7 @@ from .module_context import ModuleContext
 from .knowledge_base_model import KnowledgeBase, KnowledgeBaseModel
 from .resource_model import ResourceModel
 from .document_model import DocumentModel
-from .task_model import Task, TaskReason, TaskModel, IndexTask, IndexTaskOperation
+from .task_model2 import PreprocessingTask, TaskReason, TaskModel, IndexTask, IndexTaskOperation
 
 class PreprocessEvent:
   task_id: int
@@ -212,7 +212,7 @@ class StateMachine:
         resource_path: Path,
         resource_hash: bytes,
         from_resource_hash: bytes | None,
-      ) -> Task | None:
+      ) -> PreprocessingTask | None:
 
     last_task = self._last_defined_task(cursor, resource_hash)
     submit_reason: TaskReason.CREATE | TaskReason.UPDATE | None = None
@@ -255,9 +255,9 @@ class StateMachine:
       base: KnowledgeBase,
       resource_hash: bytes,
       resource_module: ResourceModule,
-    ) -> Task | None:
+    ) -> PreprocessingTask | None:
 
-    task: Task | None = None
+    task: PreprocessingTask | None = None
     last_task = self._last_defined_task(cursor, resource_hash)
 
     if last_task is not None:
@@ -285,7 +285,7 @@ class StateMachine:
 
     return task
 
-  def _remove_events_associated_with_task(self, task: Task) -> None:
+  def _remove_events_associated_with_task(self, task: PreprocessingTask) -> None:
     self._preproc_events_queue = [
       event for event in self._preproc_events_queue
       if event.task_id != task.id
@@ -295,8 +295,8 @@ class StateMachine:
       if event.task_id != task.id
     ]
 
-  def _register_preprocess_events(self, task: Task) -> None:
-    for preproc_task in task.preprocessing_tasks:
+  def _register_preprocess_events(self, task: PreprocessingTask) -> None:
+    for preproc_task in task.sub_tasks:
       self._preproc_events_queue.append(PreprocessEvent(
         task_id=task.id,
         preproc_task_id=preproc_task.id,
@@ -308,7 +308,7 @@ class StateMachine:
         created_at=preproc_task.created_at,
       ))
 
-  def _register_handle_index_events(self, task: Task, added_index_tasks: list[IndexTask]) -> None:
+  def _register_handle_index_events(self, task: PreprocessingTask, added_index_tasks: list[IndexTask]) -> None:
     for index_task in added_index_tasks:
       self._index_events_queue.append(HandleIndexEvent(
         task_id=task.id,
@@ -335,7 +335,7 @@ class StateMachine:
     )
     return count
 
-  def _last_defined_task(self, cursor: Cursor, resource_hash: bytes) -> None | Task:
+  def _last_defined_task(self, cursor: Cursor, resource_hash: bytes) -> None | PreprocessingTask:
     for task in self._task_model.get_tasks(cursor, resource_hash):
       if task.reason != TaskReason.UNDEFINED:
         return task
