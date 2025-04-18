@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from time import time
 from enum import Enum
-from json import dumps
 from typing import Any, Generator, Iterable
 from sqlite3 import Cursor
 from pathlib import Path
@@ -11,8 +10,9 @@ from pathlib import Path
 from ..sqlite3_pool import register_table_creators
 from ..utils import chunks, fetchmany
 from .common import FRAMEWORK_DB
+from .document_model import Document
 from .module_context import ModuleContext, ResourceModule, PreprocessingModule, IndexModule
-from .document_model import DocumentParams
+
 
 @dataclass
 class Task:
@@ -334,7 +334,7 @@ class TaskModel:
         task: Task,
         preprocessing_task: PreprocessingTask,
         index_modules: Iterable[IndexModule],
-        added_documents: Iterable[DocumentParams],
+        added_documents: Iterable[Document],
         removed_document_ids: Iterable[int],
       ) -> Task:
 
@@ -355,7 +355,6 @@ class TaskModel:
       cursor=cursor,
       task=task,
       created_at=created_at,
-      preprocessing_module=preprocessing_task.module,
       index_modules=index_modules,
       added_documents=added_documents,
     ):
@@ -401,7 +400,6 @@ class TaskModel:
     index_tasks_ids = set(task.id for task in index_tasks)
     remain_index_tasks: list[IndexTask] = []
     completed_task_ids: list[int] = []
-    to_remove_document_ids: set[int] = set()
 
     for index_task in task.index_tasks:
       if index_task.id not in index_tasks_ids:
@@ -412,26 +410,8 @@ class TaskModel:
     for chunk_task_ids in chunks(completed_task_ids):
       question_marks = ", ".join("?" for _ in chunk_task_ids)
       cursor.execute(
-        "SELECT document, operation FROM index_tasks WHERE id IN ({})".format(question_marks),
-        chunk_task_ids,
-      )
-      for row in cursor.fetchall():
-        document_id: int = row[0]
-        operation = IndexTaskOperation(row[1])
-        if operation == IndexTaskOperation.REMOVE:
-          to_remove_document_ids.add(document_id)
-
-      cursor.execute(
         "DELETE FROM index_tasks WHERE id IN ({})".format(question_marks),
         chunk_task_ids,
-      )
-
-    for document_ids in chunks(sorted(list(to_remove_document_ids))):
-      cursor.execute(
-        "DELETE FROM documents WHERE id IN ({})".format(
-          ", ".join("?" for _ in document_ids),
-        ),
-        document_ids,
       )
 
     preprocess_tasks_count = self._sub_tasks_count(cursor, "preproc_tasks", task)
@@ -466,30 +446,17 @@ class TaskModel:
       cursor: Cursor,
       task: Task,
       created_at: int,
-      preprocessing_module: PreprocessingModule,
       index_modules: Iterable[IndexModule],
-      added_documents: Iterable[DocumentParams],
+      added_documents: Iterable[Document],
     ) -> Generator[IndexTask, None, None]:
 
-    preprocessing_module_id = self._ctx.module_id(preprocessing_module)
-
-    for document_params in added_documents:
-      cursor.execute(
-        "INSERT INTO documents (path, res_hash, preproc_module, meta) VALUES (?, ?, ?, ?)",
-        (
-          str(document_params.path),
-          task.resource_hash,
-          preprocessing_module_id,
-          dumps(document_params.meta),
-        ),
-      )
-      document_id = cursor.lastrowid
+    for document in added_documents:
       for index_module in index_modules:
         cursor.execute(
           "INSERT INTO index_tasks (parent, document, operation, index_module, created_at) VALUES (?, ?, ?, ?, ?)",
           (
             task.id,
-            document_id,
+            document.id,
             IndexTaskOperation.CREATE.value,
             self._ctx.module_id(index_module),
             created_at,
@@ -498,7 +465,7 @@ class TaskModel:
         index_task_id = cursor.lastrowid
         yield IndexTask(
           id=index_task_id,
-          document_id=document_id,
+          document_id=document.id,
           module=index_module,
           operation=IndexTaskOperation.CREATE,
           created_at=created_at,
@@ -534,12 +501,6 @@ class TaskModel:
           operation=IndexTaskOperation.REMOVE,
           created_at=created_at,
         )
-
-    for removed_document_id in removed_document_ids:
-      cursor.execute(
-        "DELETE FROM documents WHERE id = ?",
-        (removed_document_id,),
-      )
 
   def _sub_tasks_count(self, cursor: Cursor, table_name: str, parent: Task):
     cursor.execute(

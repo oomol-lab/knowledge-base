@@ -4,18 +4,19 @@ import unittest
 from io import BufferedReader
 from typing import Generator, Iterable
 from pathlib import Path
+from sqlite3 import Cursor
 
 from knbase.sqlite3_pool import SQLite3Pool
 from knbase.framework.common import FRAMEWORK_DB
 from knbase.framework.knowledge_base_model import KnowledgeBaseModel
 from knbase.framework.module_context import ModuleContext
 from knbase.framework.resource_model import ResourceModel
-from knbase.framework.document_model import DocumentModel, DocumentParams, IndexTaskOperation, TaskStep, TaskReason
+from knbase.framework.document_model import Document, DocumentModel
+from knbase.framework.task_model import TaskModel, IndexTaskOperation, TaskStep, TaskReason, IndexTask
 from knbase.module import (
   ResourceModule,
   PreprocessingModule,
   IndexModule,
-  Document,
   PreprocessingFile,
   PreprocessingResult,
   Resource,
@@ -258,10 +259,18 @@ class TestFrameworkModel(unittest.TestCase):
 
   def test_document_models(self):
     db, ctx, resource_module, preproc_module, index_module = _create_variables("test_documents.sqlite3")
-    model = DocumentModel(ctx)
+    knbase_model = KnowledgeBaseModel(ctx)
+    doc_model = DocumentModel(ctx)
+    task_model = TaskModel(ctx)
 
     with db.connect() as (cursor, conn):
-      task1 = model.create_task(
+      knbase = knbase_model.create_knowledge_base(
+        cursor=cursor,
+        resource_module=resource_module,
+        resource_params=None,
+        records=[],
+      )
+      task1 = task_model.create_task(
         cursor=cursor,
         event_id=42,
         resource_path=Path("/path/to/foobar"),
@@ -271,20 +280,20 @@ class TestFrameworkModel(unittest.TestCase):
       conn.commit()
 
     with db.connect() as (cursor, _):
-      got_task = model.get_task(cursor)
+      got_task = task_model.get_task(cursor)
       self.assertEqual(got_task.id, task1.id)
       self.assertEqual(got_task.event_id, task1.event_id)
       self.assertEqual(got_task.resource_path, task1.resource_path)
       self.assertEqual(got_task.resource_hash, task1.resource_hash)
-      self.assertIsNone(model.get_task(
+      self.assertIsNone(task_model.get_task(
         cursor=cursor,
         unexpected_tasks=(got_task,),
       ))
-      ids1 = [t.id for t in model.get_tasks(
+      ids1 = [t.id for t in task_model.get_tasks(
         cursor=cursor,
         resource_hash=b"HASH1",
       )]
-      ids2 = [t.id for t in model.get_tasks(
+      ids2 = [t.id for t in task_model.get_tasks(
         cursor=cursor,
         resource_hash=b"HASH2",
       )]
@@ -292,7 +301,7 @@ class TestFrameworkModel(unittest.TestCase):
       self.assertListEqual(ids2, [])
 
     with db.connect() as (cursor, conn):
-      task2 = model.create_task(
+      task2 = task_model.create_task(
         cursor=cursor,
         event_id=98,
         resource_path=Path("/path/to/foobar2"),
@@ -303,24 +312,24 @@ class TestFrameworkModel(unittest.TestCase):
       conn.commit()
 
     with db.connect() as (cursor, _):
-      ids1 = [t.id for t in model.get_tasks(
+      ids1 = [t.id for t in task_model.get_tasks(
         cursor=cursor,
         resource_hash=b"HASH1",
       )]
-      ids2 = [t.id for t in model.get_tasks(
+      ids2 = [t.id for t in task_model.get_tasks(
         cursor=cursor,
         resource_hash=b"HASH2",
       )]
       self.assertListEqual(ids1, [task1.id])
       self.assertListEqual(ids2, [task2.id])
 
-      got_task = model.get_task(cursor)
+      got_task = task_model.get_task(cursor)
       self.assertEqual(got_task.id, task1.id)
-      got_task = model.get_task(cursor, (task1,))
+      got_task = task_model.get_task(cursor, (task1,))
       self.assertEqual(got_task.id, task2.id)
 
     with db.connect() as (cursor, conn):
-      model.go_to_preprocess(
+      task_model.go_to_preprocess(
         cursor=cursor,
         task=task1,
         reason=TaskReason.CREATE,
@@ -329,7 +338,7 @@ class TestFrameworkModel(unittest.TestCase):
       conn.commit()
 
     with db.connect() as (cursor, _):
-      got_task = model.get_task(cursor, (task2,))
+      got_task = task_model.get_task(cursor, (task2,))
       self.assertEqual(got_task.id, task1.id)
       self.assertEqual(got_task.step, TaskStep.PROCESSING)
       self.assertListEqual(
@@ -340,22 +349,33 @@ class TestFrameworkModel(unittest.TestCase):
       preprocessing_task = got_task.preprocessing_tasks[0]
 
     with db.connect() as (cursor, conn):
-      task1 = model.complete_preprocess(
+      added_documents: list[Document] = [
+        doc_model.create_document(
+          cursor=cursor,
+          preprocessing_module=preproc_module,
+          base=knbase,
+          resource_hash=task1.resource_hash,
+          document_hash=b"DOCUMENT",
+          path="/documents/doc1.txt",
+          meta="foobar",
+        ),
+        doc_model.create_document(
+          cursor=cursor,
+          preprocessing_module=preproc_module,
+          base=knbase,
+          resource_hash=task1.resource_hash,
+          document_hash=b"DOCUMENT",
+          path="/documents/doc12.txt",
+          meta="hello world",
+        ),
+      ]
+      task1 = task_model.complete_preprocess(
         cursor=cursor,
         task=task1,
         preprocessing_task=preprocessing_task,
         index_modules=(index_module,),
+        added_documents=added_documents,
         removed_document_ids=(),
-        added_documents=(
-          DocumentParams(
-            path="/documents/doc1.txt",
-            meta="foobar",
-          ),
-          DocumentParams(
-            path="/documents/doc2.txt",
-            meta="hello world",
-          ),
-        ),
       )
       conn.commit()
       self.assertListEqual(task1.preprocessing_tasks, [])
@@ -364,22 +384,22 @@ class TestFrameworkModel(unittest.TestCase):
         list2=[IndexTaskOperation.CREATE] * 2,
       )
 
-    added_document_ids = [t.document_id for t in task1.index_tasks]
     index_tasks1 = [*task1.index_tasks]
 
     with db.connect() as (cursor, _):
       self.assertListEqual(
-        list1=added_document_ids,
+        list1=[d.id for d in added_documents],
         list2=[
           document.id
-          for document in model.get_documents(
+          for document in doc_model.get_documents(
             cursor=cursor,
-            resource_hash=task1.resource_hash,
             preprocessing_module=preproc_module,
+            base=knbase,
+            resource_hash=task1.resource_hash,
           )
         ]
       )
-      task1 = model.get_task(cursor, (task2,))
+      task1 = task_model.get_task(cursor, (task2,))
       self.assertListEqual(task1.preprocessing_tasks, [])
       self.assertListEqual(
         list1=[t.id for t in task1.index_tasks],
@@ -387,7 +407,8 @@ class TestFrameworkModel(unittest.TestCase):
       )
 
     with db.connect() as (cursor, conn):
-      task1 = model.complete_handle_index(cursor, task1, (index_tasks1[0],))
+      task1 = task_model.complete_handle_index(cursor, task1, (index_tasks1[0],))
+      self._remove_removed_documents(cursor, doc_model, (index_tasks1[0],))
       self.assertEqual(task1.step, TaskStep.PROCESSING)
       self.assertListEqual(task1.preprocessing_tasks, [])
       self.assertListEqual(
@@ -397,7 +418,7 @@ class TestFrameworkModel(unittest.TestCase):
       conn.commit()
 
     with db.connect() as (cursor, _):
-      task1 = model.get_task(cursor, (task2,))
+      task1 = task_model.get_task(cursor, (task2,))
       self.assertListEqual(task1.preprocessing_tasks, [])
       self.assertListEqual(
         list1=[t.id for t in task1.index_tasks],
@@ -405,27 +426,30 @@ class TestFrameworkModel(unittest.TestCase):
       )
 
     with db.connect() as (cursor, conn):
-      task1 = model.complete_handle_index(cursor, task1, index_tasks1)
+      task1 = task_model.complete_handle_index(cursor, task1, index_tasks1)
+      self._remove_removed_documents(cursor, doc_model, index_tasks1)
       self.assertEqual(task1.step, TaskStep.COMPLETED)
       conn.commit()
 
     with db.connect() as (cursor, _):
-      task1 = model.get_task(cursor, (task2,))
+      resource_hash = task1.resource_hash
+      task1 = task_model.get_task(cursor, (task2,))
       self.assertIsNone(task1)
       self.assertListEqual(
-        list1=added_document_ids,
+        list1=[d.id for d in added_documents],
         list2=[
           document.id
-          for document in model.get_documents(
+          for document in doc_model.get_documents(
             cursor=cursor,
-            resource_hash=b"HASH1",
             preprocessing_module=preproc_module,
+            base=knbase,
+            resource_hash=resource_hash,
           )
         ]
       )
 
     with db.connect() as (cursor, conn):
-      task3 = model.create_task(
+      task3 = task_model.create_task(
         cursor=cursor,
         event_id=120,
         resource_path=Path("/path/to/foobar"),
@@ -433,11 +457,11 @@ class TestFrameworkModel(unittest.TestCase):
         resource_module=resource_module,
       )
       self.assertEqual(task3.step, TaskStep.READY)
-      task3 = model.go_to_remove(cursor, task3, (index_module,))
+      task3 = task_model.go_to_remove(cursor, task3, (index_module,))
       index_tasks3 = task3.index_tasks
       self.assertEqual(task3.step, TaskStep.PROCESSING)
       self.assertListEqual(
-        list1=added_document_ids,
+        list1=[d.id for d in added_documents],
         list2=[t.document_id for t in index_tasks3]
       )
       self.assertListEqual(
@@ -447,21 +471,38 @@ class TestFrameworkModel(unittest.TestCase):
       conn.commit()
 
     with db.connect() as (cursor, conn):
-      task3 = model.complete_handle_index(cursor, task3, index_tasks3)
+      task3 = task_model.complete_handle_index(cursor, task3, index_tasks3)
+      self._remove_removed_documents(cursor, doc_model, index_tasks3)
       self.assertEqual(task3.step, TaskStep.COMPLETED)
       conn.commit()
 
     with db.connect() as (cursor, _):
-      task3 = model.get_task(cursor, (task2,))
+      resource_hash = task3.resource_hash
+      task3 = task_model.get_task(cursor, (task2,))
       self.assertIsNone(task3)
       self.assertListEqual(
         list1=[],
-        list2=list(model.get_documents(
-          cursor=cursor,
-          resource_hash=b"HASH1",
-          preprocessing_module=preproc_module,
-        )),
+        list2=[
+          document.id
+          for document in doc_model.get_documents(
+            cursor=cursor,
+            preprocessing_module=preproc_module,
+            base=knbase,
+            resource_hash=resource_hash,
+          )
+        ],
       )
+
+  def _remove_removed_documents(
+        self,
+        cursor: Cursor,
+        doc_model: DocumentModel,
+        index_tasks: list[IndexTask],
+      ) -> None:
+
+    for index_task in index_tasks:
+      if index_task.operation == IndexTaskOperation.REMOVE:
+        doc_model.remove_document(cursor, index_task.document_id)
 
 def _create_variables(file_name: str):
   db_path = _ensure_db_file_not_exist(file_name)
