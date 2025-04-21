@@ -39,9 +39,9 @@ class KnowledgeBaseModel:
         (knbase_id,),
       )
       for kind, module_id, params in fetchmany(cursor):
-        if kind == _ProcessKind.Preprocess:
+        if kind == _ProcessKind.Preprocess.value:
           module = self._ctx.module(module_id)
-        elif kind == _ProcessKind.Index:
+        elif kind == _ProcessKind.Index.value:
           module = self._ctx.module(module_id)
         else:
           raise ValueError(f"Unknown process kind {kind}")
@@ -178,7 +178,7 @@ def _create_tables(cursor: Cursor):
       id INTEGER PRIMARY KEY,
       kind INTEGER NOT NULL,
       knbase_id INTEGER NOT NULL,
-      module id INTEGER NOT NULL,
+      module_id INTEGER NOT NULL,
       params TEXT NOT NULL
     )
   """)

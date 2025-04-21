@@ -1,9 +1,10 @@
-import os
 import unittest
 
 from io import BufferedReader
 from typing import Generator, Iterable
 from pathlib import Path
+
+from tests.utils import ensure_db_file_not_exist
 
 from knbase.sqlite3_pool import SQLite3Pool
 from knbase.framework.common import FRAMEWORK_DB
@@ -545,7 +546,7 @@ class TestFrameworkModel(unittest.TestCase):
       ))
 
 def _create_variables(file_name: str):
-  db_path = _ensure_db_file_not_exist(file_name)
+  db_path = ensure_db_file_not_exist(file_name)
   db = SQLite3Pool(FRAMEWORK_DB, db_path)
   resource_module = _MyResourceModule()
   preproc_module = _MyPreprocessingModule()
@@ -559,14 +560,3 @@ def _create_variables(file_name: str):
     ctx = ModuleContext(cursor, modules)
     conn.commit()
     return db, ctx, resource_module, preproc_module, index_module
-
-def _ensure_db_file_not_exist(file_name: str) -> Path:
-  base_path = os.path.join(__file__, "..", "..", "tests_temp", "framework")
-  base_path = os.path.abspath(base_path)
-  os.makedirs(base_path, exist_ok=True)
-
-  file_path = Path(base_path).joinpath(file_name)
-  if file_path.exists():
-    os.remove(file_path)
-
-  return file_path

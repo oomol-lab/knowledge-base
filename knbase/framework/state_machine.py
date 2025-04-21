@@ -6,7 +6,7 @@ from sqlite3 import Cursor
 from ..sqlite3_pool import SQLite3Pool
 from ..module import Resource, Module, ResourceModule, PreprocessingModule, IndexModule
 from .common import FRAMEWORK_DB
-from .types import DocumentDescription, PreprocessingEvent, HandleIndexEvent
+from .types import DocumentDescription, PreprocessingEvent, HandleIndexEvent, RemovedResourceEvent
 from .module_context import ModuleContext
 from .knowledge_base_model import KnowledgeBase, KnowledgeBaseModel
 from .resource_model import ResourceModel
@@ -23,8 +23,10 @@ class StateMachine:
   def __init__(self, db_path: Path, modules: Iterable[Module]):
     self._db: SQLite3Pool = SQLite3Pool(FRAMEWORK_DB, db_path)
     self._preproc_tasks: list[PreprocessingTask] = []
+    self._preproc_tasks_pop_count: int = 0
     self._index_tasks: list[IndexTask] = []
-    self._removed_resource_hashes: list[bytes] = []
+    self._index_tasks_pop_count: int = 0
+    self._removed_resource_events: list[RemovedResourceEvent] = []
 
     with self._db.connect() as (cursor, conn):
       model_context = ModuleContext(cursor, modules)
@@ -46,14 +48,12 @@ class StateMachine:
 
   def goto_setting(self) -> None:
     if self._state != StateMachineState.SETTING:
-      assert not self._preproc_tasks, "preprocessing tasks are not empty"
-      assert not self._index_tasks, "index tasks are not empty"
+      self._assert_not_preprocessing()
       self._state = StateMachineState.SETTING
 
   def goto_scanning(self) -> None:
     if self._state != StateMachineState.SCANNING:
-      assert not self._preproc_tasks, "preprocessing tasks are not empty"
-      assert not self._index_tasks, "index tasks are not empty"
+      self._assert_not_preprocessing()
       self._state = StateMachineState.SCANNING
 
   def goto_processing(self) -> None:
@@ -62,6 +62,12 @@ class StateMachine:
         self._load_tasks(cursor)
         self._state = StateMachineState.PROCESSING
         conn.commit()
+
+  def _assert_not_preprocessing(self) -> None:
+    assert not self._preproc_tasks, "preprocessing tasks are not empty"
+    assert not self._index_tasks, "index tasks are not empty"
+    assert self._preproc_tasks_pop_count == 0, "there are popped preprocessing tasks"
+    assert self._index_tasks_pop_count == 0, "there are popped index tasks"
 
   def _load_tasks(self, cursor: Cursor):
     self._preproc_tasks.clear()
@@ -75,8 +81,8 @@ class StateMachine:
         self._task_model.get_index_tasks(cursor, base),
       )
 
-    self._preproc_tasks.sort(key=lambda x: (-x.created_at, -x.id))
-    self._index_tasks.sort(key=lambda x: (-x.created_at, -x.id))
+    self._preproc_tasks.sort(key=lambda x: (x.created_at, x.id))
+    self._index_tasks.sort(key=lambda x: (x.created_at, x.id))
 
   def get_knowledge_bases(self) -> Generator[KnowledgeBase, None, None]:
     with self._db.connect() as (cursor, _):
@@ -211,7 +217,9 @@ class StateMachine:
     if not self._preproc_tasks:
       return None
 
-    task = self._preproc_tasks.pop()
+    task = self._preproc_tasks.pop(0)
+    self._preproc_tasks_pop_count += 1
+
     return PreprocessingEvent(
       proto_event_id=task.event_id,
       task_id=task.id,
@@ -228,15 +236,31 @@ class StateMachine:
     if not self._index_tasks:
       return None
 
-    task = self._index_tasks.pop()
+    with self._db.connect() as (cursor, _):
+      task = self._index_tasks.pop(0)
+      self._index_tasks_pop_count += 1
+      document = self._document_model.get_document(
+        cursor=cursor,
+        base=task.base,
+        id=task.document_id,
+      )
+
     return HandleIndexEvent(
-      proto_event_id=task.event_id,
+      proto_event_id=task.event,
       task_id=task.id,
       base=task.base,
-      module=task.index_module,
+      index_module=task.index_module,
       operation=task.operation,
+      document_hash=document.document_hash,
+      document_path=document.path,
+      document_meta=document.meta,
       created_at=task.created_at,
     )
+
+  def pop_removed_resource_event(self) -> RemovedResourceEvent | None:
+    if not self._removed_resource_events:
+      return None
+    return self._removed_resource_events.pop(0)
 
   def complete_preproc_task(
         self,
@@ -275,7 +299,7 @@ class StateMachine:
               None,
             )
             if last_task is None:
-              self._task_model.create_index_task(
+              index_task = self._task_model.create_index_task(
                 cursor=cursor,
                 event_id=task.event_id,
                 index_module=index_module,
@@ -283,6 +307,8 @@ class StateMachine:
                 document=document,
                 operation=IndexTaskOperation.CREATE,
               )
+              self._index_tasks.append(index_task)
+
             elif last_task.operation == IndexTaskOperation.REMOVE:
               # cancel each other out
               self._task_model.remove_index_task(cursor, last_task)
@@ -300,6 +326,8 @@ class StateMachine:
               base=task.base,
               resource_hash=resource_hash,
             )
+
+        self._preproc_tasks_pop_count -= 1
         conn.commit()
 
       except BaseException as e:
@@ -318,29 +346,13 @@ class StateMachine:
         assert task is not None, f"Task not found (id={event.task_id})"
 
         document = self._document_model.get_document(cursor, task.base, task.document_id)
-        last_task = next(
-          self._task_model.get_index_tasks_of_document(
-            cursor=cursor,
-            index_module=task,
-            document=document,
-          ),
-          None,
-        )
-        should_check_document_refs = False
-        if last_task is None:
-          self._task_model.remove_index_task(cursor, task)
-          if task.operation == IndexTaskOperation.CREATE:
-            should_check_document_refs = True
+        self._task_model.remove_index_task(cursor, task)
 
-        elif task.operation != last_task.operation: # cancel each other out
-          self._task_model.remove_index_task(cursor, last_task)
-          if last_task.operation == IndexTaskOperation.CREATE:
-            should_check_document_refs = True
-
-        if should_check_document_refs and \
+        if task.operation == IndexTaskOperation.CREATE and \
            self._document_refs(cursor, document) == 0:
           self._document_model.remove_document(cursor, document)
 
+        self._index_tasks_pop_count -= 1
         conn.commit()
 
       except BaseException as e:
@@ -364,7 +376,7 @@ class StateMachine:
       self._task_model.remove_preproc_task(cursor, task)
 
     for preproc_module in first_resource.base.preproc_modules:
-      self._task_model.create_preproc_task(
+      preproc_task = self._task_model.create_preproc_task(
         cursor=cursor,
         event_id=event_id,
         preproc_module=preproc_module,
@@ -373,9 +385,12 @@ class StateMachine:
         from_resource_hash=from_resource.hash if from_resource else None,
         path=path,
       )
+      self._preproc_tasks.append(preproc_task)
 
-    if first_resource.hash in self._removed_resource_hashes:
-      self._removed_resource_hashes.remove(first_resource.hash)
+    for i, event in enumerate(self._removed_resource_events):
+      if event.hash == first_resource.hash:
+        self._removed_resource_events.pop(i)
+        break
 
   def _submit_resource_hash_removed(
         self,
@@ -413,7 +428,7 @@ class StateMachine:
         self._document_model.remove_document(cursor, document)
       else:
         for index_module in index_modules:
-          self._task_model.create_index_task(
+          index_task = self._task_model.create_index_task(
             cursor=cursor,
             event_id=event_id,
             index_module=index_module,
@@ -421,9 +436,14 @@ class StateMachine:
             document=document,
             operation=IndexTaskOperation.REMOVE,
           )
+          self._index_tasks.append(index_task)
 
-    if resource_hash not in self._removed_resource_hashes:
-      self._removed_resource_hashes.append(resource_hash)
+    if all(e.hash != resource_hash for e in self._removed_resource_events):
+      self._removed_resource_events.append(RemovedResourceEvent(
+        proto_event_id=event_id,
+        hash=resource_hash,
+        base=base,
+      ))
 
   def _resource_hash_refs(self, cursor: Cursor, knbase: KnowledgeBase, hash: bytes) -> int:
     count: int = 0

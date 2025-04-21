@@ -6,6 +6,13 @@ from ..module import KnowledgeBase, PreprocessingModule, IndexModule
 from .task_model import IndexTaskOperation
 
 
+@dataclass
+class DocumentDescription:
+  hash: bytes
+  path: Path
+  meta: Any
+
+@dataclass
 class PreprocessingEvent:
   proto_event_id: int
   task_id: int
@@ -16,16 +23,20 @@ class PreprocessingEvent:
   path: Path
   created_at: int
 
+@dataclass
 class HandleIndexEvent:
   proto_event_id: int
   task_id: int
   base: KnowledgeBase
-  module: IndexModule
+  index_module: IndexModule
   operation: IndexTaskOperation
+  document_hash: bytes
+  document_path: Path
+  document_meta: Any
   created_at: int
 
 @dataclass
-class DocumentDescription:
+class RemovedResourceEvent:
+  proto_event_id: int
   hash: bytes
-  path: Path
-  meta: Any
+  base: KnowledgeBase
