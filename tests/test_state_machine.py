@@ -6,7 +6,7 @@ from pathlib import Path
 
 from tests.utils import ensure_db_file_not_exist
 
-from knbase.framework import StateMachine, StateMachineState, DocumentDescription
+from knbase.state_machine import StateMachine, StateMachineState, DocumentDescription
 from knbase.module import (
   Document,
   ResourceModule,

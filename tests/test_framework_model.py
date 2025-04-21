@@ -7,12 +7,12 @@ from pathlib import Path
 from tests.utils import ensure_db_file_not_exist
 
 from knbase.sqlite3_pool import SQLite3Pool
-from knbase.framework.common import FRAMEWORK_DB
-from knbase.framework.knowledge_base_model import KnowledgeBaseModel
-from knbase.framework.module_context import ModuleContext
-from knbase.framework.resource_model import ResourceModel
-from knbase.framework.document_model import Document, DocumentModel
-from knbase.framework.task_model import IndexTaskOperation, TaskModel
+from knbase.state_machine.common import FRAMEWORK_DB
+from knbase.state_machine.knowledge_base_model import KnowledgeBaseModel
+from knbase.state_machine.module_context import ModuleContext
+from knbase.state_machine.resource_model import ResourceModel
+from knbase.state_machine.document_model import Document, DocumentModel
+from knbase.state_machine.task_model import IndexTaskOperation, TaskModel
 from knbase.module import (
   ResourceModule,
   PreprocessingModule,
