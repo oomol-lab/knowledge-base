@@ -431,13 +431,11 @@ class TestFrameworkModel(unittest.TestCase):
       ])
       self.assertEqual(2, model.count_resource_refs(
         cursor=cursor,
-        preproc_module=preproc_module,
         base=knbase,
         resource_hash=b"HASH1",
       ))
       self.assertEqual(1, model.count_resource_refs(
         cursor=cursor,
-        preproc_module=preproc_module,
         base=knbase,
         resource_hash=b"HASH2",
       ))
@@ -452,13 +450,11 @@ class TestFrameworkModel(unittest.TestCase):
       self.assertListEqual(preproc_tasks, [preproc_task1.id])
       self.assertEqual(1, model.count_resource_refs(
         cursor=cursor,
-        preproc_module=preproc_module,
         base=knbase,
         resource_hash=b"HASH1",
       ))
       self.assertEqual(0, model.count_resource_refs(
         cursor=cursor,
-        preproc_module=preproc_module,
         base=knbase,
         resource_hash=b"HASH2",
       ))
@@ -501,6 +497,7 @@ class TestFrameworkModel(unittest.TestCase):
         cursor=cursor,
         event_id=1,
         index_module=index_module,
+        base=knbase,
         document=document1,
         operation=IndexTaskOperation.CREATE,
       )
@@ -508,13 +505,14 @@ class TestFrameworkModel(unittest.TestCase):
         cursor=cursor,
         event_id=2,
         index_module=index_module,
+        base=knbase,
         document=document2,
         operation=IndexTaskOperation.REMOVE,
       )
       conn.commit()
 
     with db.connect() as (cursor, _):
-      index_tasks = list(model.get_index_tasks(cursor))
+      index_tasks = list(model.get_index_tasks(cursor, knbase))
       index_tasks = sorted([t.id for t in index_tasks])
       self.assertListEqual(index_tasks, [
         index_task1.id,
@@ -524,7 +522,7 @@ class TestFrameworkModel(unittest.TestCase):
         cursor=cursor,
         document=document1,
       ))
-      self.assertEqual(1, model.count_document_refs(
+      self.assertEqual(0, model.count_document_refs(
         cursor=cursor,
         document=document2,
       ))
@@ -534,7 +532,7 @@ class TestFrameworkModel(unittest.TestCase):
       conn.commit()
 
     with db.connect() as (cursor, _):
-      index_tasks = list(model.get_index_tasks(cursor))
+      index_tasks = list(model.get_index_tasks(cursor, knbase))
       index_tasks = sorted([t.id for t in index_tasks])
       self.assertListEqual(index_tasks, [index_task1.id])
       self.assertEqual(1, model.count_document_refs(

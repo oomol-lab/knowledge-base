@@ -35,6 +35,30 @@ class DocumentModel:
       return 0
     return row[0]
 
+  def get_document(self, cursor: Cursor, base: KnowledgeBase, id: int) -> Document | None:
+    cursor.execute(
+      """
+      SELECT preproc_module, doc_hash, res_hash, path, meta
+      FROM documents
+      WHERE id = ? AND knbase = ?
+      """,
+      (id, base.id),
+    )
+    row = cursor.fetchone()
+    if row is None:
+      return None
+
+    preproc_module, document_hash, resource_hash, path, meta_text = row
+    return Document(
+      id=id,
+      preprocessing_module=self._ctx.module(preproc_module),
+      base=base,
+      resource_hash=resource_hash,
+      document_hash=document_hash,
+      path=Path(path),
+      meta=loads(meta_text),
+    )
+
   def get_documents(
         self,
         cursor: Cursor,
