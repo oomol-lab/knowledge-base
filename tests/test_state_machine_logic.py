@@ -69,7 +69,7 @@ class _MyIndexModule(IndexModule):
   def remove(self, id: int):
     raise NotImplementedError()
 
-class TestStateMachine(unittest.TestCase):
+class TestStateMachineLogic(unittest.TestCase):
 
   def test_preprocess_all_in_once(self):
     db_path = ensure_db_file_not_exist("state-machine.sqlite3")

@@ -72,7 +72,7 @@ class _MyIndexModule(IndexModule):
   def remove(self, id: int):
     raise NotImplementedError()
 
-class TestFrameworkModel(unittest.TestCase):
+class TestStateMachineModel(unittest.TestCase):
 
   def test_resource_models(self):
     db, ctx, resource_module, _, _ = _create_variables("test_resources.sqlite3")
