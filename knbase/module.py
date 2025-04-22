@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from io import BufferedReader
-from typing import Any, Generator, Iterable
+from os import PathLike
+from typing import Any, Generator
 from dataclasses import dataclass
 from abc import abstractmethod, ABC
 from enum import Enum
 from pathlib import Path
-from json import dump, load
+
+
+class InterruptedException(Exception):
+  pass
 
 class Updating(Enum):
   CREATE = 0,
@@ -14,10 +18,7 @@ class Updating(Enum):
   DELETE = 2,
 
 class Module(ABC):
-  def __init__(
-        self,
-        id: str,
-      ) -> None:
+  def __init__(self, id: str) -> None:
     super().__init__()
     self._id: str = id
 
@@ -78,79 +79,40 @@ class ResourceEvent:
 class ResourceModule(Module):
   @abstractmethod
   def scan(self, base: KnowledgeBase) -> Generator[ResourceEvent, None, None]:
-    pass
+    raise NotImplementedError()
 
   @abstractmethod
   def open(self, resource: Resource) -> BufferedReader:
-    pass
+    raise NotImplementedError()
 
   @abstractmethod
   def complete_event(self, event: ResourceEvent) -> None:
-    pass
+    raise NotImplementedError()
 
 @dataclass
-class Document:
-  resource_hash: bytes
-  meta: Any
-  body: list[Fragment]
-
-@dataclass
-class Fragment:
-  text: str
-  meta: Any
-
-def save_document(path: Path, document: Document) -> None:
-  with path.open("w", encoding="utf-8") as fp:
-    obj = {
-      **document,
-      "resource_hash": document.resource_hash.hex(),
-    }
-    dump(obj, fp, ensure_ascii=False)
-
-def load_document(path: Path) -> Document:
-  with path.open("r", encoding="utf-8") as fp:
-    obj = load(fp)
-    obj["resource_hash"] = bytes.fromhex(obj["resource_hash"])
-    return Document(
-      **obj,
-      body=[Fragment(**f) for f in obj["body"]],
-    )
-
-@dataclass
-class PreprocessingFile:
+class PreprocessingResult:
   hash: bytes
-  path: Path
-
-PreprocessingResult = tuple[Path, Updating]
+  path: PathLike
+  meta: Any
+  from_cache: bool = False
 
 class PreprocessingModule(Module):
   @abstractmethod
-  def create(
-    self,
-    context: Path,
-    file: PreprocessingFile,
-    resource: Resource,
-    recover: bool,
-  ) -> Iterable[PreprocessingResult]:
-    pass
-
-  @abstractmethod
-  def update(
-    self,
-    context: Path,
-    file: PreprocessingFile,
-    prev_file: PreprocessingFile,
-    prev_cache: Path | None,
-    resource: Resource,
-    recover: bool,
-  ) -> Iterable[PreprocessingResult]:
-    pass
+  def preprocess(
+      self,
+      workspace_path: Path,
+      latest_cache_path: Path | None,
+      resource_hash: bytes,
+      resource_path: Path,
+      resource_content_type: str,
+    ) -> list[PreprocessingResult]:
+    raise NotImplementedError()
 
 class IndexModule(Module):
   @abstractmethod
-  def create(self, id: int, document: Document):
-    pass
+  def create(self, id: int):
+    raise NotImplementedError()
 
   @abstractmethod
   def remove(self, id: int):
-    pass
+    raise NotImplementedError()

@@ -1,82 +1,25 @@
 import unittest
 
-from io import BufferedReader
-from typing import Generator, Iterable, TypeVar, Callable
+from typing import Generator, Callable, TypeVar
 from pathlib import Path
 
+from tests.my_modules import MyResourceModule, MyPreprocessingModule, MyIndexModule
 from tests.utils import ensure_db_file_not_exist
 
 from knbase.state_machine import StateMachine, StateMachineState, DocumentDescription
-from knbase.module import (
-  Document,
-  ResourceModule,
-  PreprocessingModule,
-  IndexModule,
-  PreprocessingFile,
-  PreprocessingResult,
-  Resource,
-  ResourceEvent,
-  KnowledgeBase,
-)
+from knbase.module import Resource
 
 
 _T = TypeVar("_T")
-
-class _MyResourceModule(ResourceModule):
-  def __init__(self):
-    super().__init__("my_res")
-
-  def scan(self, base: KnowledgeBase) -> Generator[ResourceEvent, None, None]:
-    raise NotImplementedError()
-
-  def open(self, resource: Resource) -> BufferedReader:
-    raise NotImplementedError()
-
-  def complete_event(self, event: ResourceEvent) -> None:
-    raise NotImplementedError()
-
-class _MyPreprocessingModule(PreprocessingModule):
-  def __init__(self):
-    super().__init__("my_preproc")
-
-  def create(
-    self,
-    context: Path,
-    file: PreprocessingFile,
-    resource: Resource,
-    recover: bool,
-  ) -> Iterable[PreprocessingResult]:
-    raise NotImplementedError()
-
-  def update(
-    self,
-    context: Path,
-    file: PreprocessingFile,
-    prev_file: PreprocessingFile,
-    prev_cache: Path | None,
-    resource: Resource,
-    recover: bool,
-  ) -> Iterable[PreprocessingResult]:
-    raise NotImplementedError()
-
-class _MyIndexModule(IndexModule):
-  def __init__(self):
-    super().__init__("my_index")
-
-  def create(self, id: int, document: Document):
-    raise NotImplementedError()
-
-  def remove(self, id: int):
-    raise NotImplementedError()
 
 class TestStateMachineLogic(unittest.TestCase):
 
   def test_preprocess_all_in_once(self):
     db_path = ensure_db_file_not_exist("state-machine.sqlite3")
     modules = (
-      _MyResourceModule(),
-      _MyPreprocessingModule(),
-      _MyIndexModule(),
+      MyResourceModule(),
+      MyPreprocessingModule(),
+      MyIndexModule(),
     )
     machine = StateMachine(db_path, modules)
 
@@ -133,7 +76,7 @@ class TestStateMachineLogic(unittest.TestCase):
     preproc_events = list(self._pop_all(machine.pop_preproc_event))
 
     self.assertListEqual(
-      list1=[(e.resource_hash, e.path) for e in preproc_events],
+      list1=[(e.resource_hash, e.resource_path) for e in preproc_events],
       list2=[
         (b"HASH-1", Path("file1.txt")),
         (b"HASH-2", Path("file2.txt")),
@@ -197,14 +140,14 @@ class TestStateMachineLogic(unittest.TestCase):
     )
     self.assertListEqual(
       list1=[
-        (e.task_id, e.resource_hash, e.path)
+        (e.task_id, e.resource_hash, e.resource_path)
         for e in self._pop_all(machine.pop_preproc_event)
       ],
       list2=[(
         # preproc_events[0] is who wasn't the removed one
         preproc_events[0].task_id,
         preproc_events[0].resource_hash,
-        preproc_events[0].path,
+        preproc_events[0].resource_path,
       )],
     )
     machine.complete_preproc_task(

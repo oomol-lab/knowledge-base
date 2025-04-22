@@ -171,6 +171,7 @@ class StateMachine:
             first_resource=resource,
             from_resource=origin_resource,
             path=path,
+            content_type=resource.content_type,
           )
         conn.commit()
 
@@ -227,7 +228,8 @@ class StateMachine:
       module=task.preproc_module,
       resource_hash=task.resource_hash,
       from_resource_hash=task.from_resource_hash,
-      path=task.path,
+      resource_content_type=task.content_type,
+      resource_path=task.path,
       created_at=task.created_at,
     )
 
@@ -366,6 +368,7 @@ class StateMachine:
         first_resource: Resource,
         from_resource: Resource | None,
         path: Path,
+        content_type: str,
       ) -> None:
 
     for task in self._task_model.get_preproc_tasks(
@@ -384,6 +387,7 @@ class StateMachine:
         resource_hash=first_resource.hash,
         from_resource_hash=from_resource.hash if from_resource else None,
         path=path,
+        content_type=content_type,
       )
       self._preproc_tasks.append(preproc_task)
 

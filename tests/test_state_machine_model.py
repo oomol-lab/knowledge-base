@@ -1,9 +1,7 @@
 import unittest
 
-from io import BufferedReader
-from typing import Generator, Iterable
 from pathlib import Path
-
+from tests.my_modules import MyResourceModule, MyPreprocessingModule, MyIndexModule
 from tests.utils import ensure_db_file_not_exist
 
 from knbase.sqlite3_pool import SQLite3Pool
@@ -11,66 +9,10 @@ from knbase.state_machine.common import FRAMEWORK_DB
 from knbase.state_machine.knowledge_base_model import KnowledgeBaseModel
 from knbase.state_machine.module_context import ModuleContext
 from knbase.state_machine.resource_model import ResourceModel
-from knbase.state_machine.document_model import Document, DocumentModel
+from knbase.state_machine.document_model import DocumentModel
 from knbase.state_machine.task_model import IndexTaskOperation, TaskModel
-from knbase.module import (
-  ResourceModule,
-  PreprocessingModule,
-  IndexModule,
-  PreprocessingFile,
-  PreprocessingResult,
-  Resource,
-  ResourceEvent,
-  KnowledgeBase,
-)
+from knbase.module import Resource, KnowledgeBase
 
-
-class _MyResourceModule(ResourceModule):
-  def __init__(self):
-    super().__init__("my_res")
-
-  def scan(self, base: KnowledgeBase) -> Generator[ResourceEvent, None, None]:
-    raise NotImplementedError()
-
-  def open(self, resource: Resource) -> BufferedReader:
-    raise NotImplementedError()
-
-  def complete_event(self, event: ResourceEvent) -> None:
-    raise NotImplementedError()
-
-class _MyPreprocessingModule(PreprocessingModule):
-  def __init__(self):
-    super().__init__("my_preproc")
-
-  def create(
-    self,
-    context: Path,
-    file: PreprocessingFile,
-    resource: Resource,
-    recover: bool,
-  ) -> Iterable[PreprocessingResult]:
-    raise NotImplementedError()
-
-  def update(
-    self,
-    context: Path,
-    file: PreprocessingFile,
-    prev_file: PreprocessingFile,
-    prev_cache: Path | None,
-    resource: Resource,
-    recover: bool,
-  ) -> Iterable[PreprocessingResult]:
-    raise NotImplementedError()
-
-class _MyIndexModule(IndexModule):
-  def __init__(self):
-    super().__init__("my_index")
-
-  def create(self, id: int, document: Document):
-    raise NotImplementedError()
-
-  def remove(self, id: int):
-    raise NotImplementedError()
 
 class TestStateMachineModel(unittest.TestCase):
 
@@ -411,6 +353,7 @@ class TestStateMachineModel(unittest.TestCase):
         resource_hash=b"HASH1",
         from_resource_hash=None,
         path=Path("/path/to/file1"),
+        content_type="text/plain",
       )
       preproc_task2 = model.create_preproc_task(
         cursor=cursor,
@@ -420,6 +363,7 @@ class TestStateMachineModel(unittest.TestCase):
         resource_hash=b"HASH2",
         from_resource_hash=b"HASH1",
         path=Path("/path/to/file1"),
+        content_type="text/plain",
       )
       conn.commit()
 
@@ -548,9 +492,9 @@ class TestStateMachineModel(unittest.TestCase):
 def _create_variables(file_name: str):
   db_path = ensure_db_file_not_exist(file_name)
   db = SQLite3Pool(FRAMEWORK_DB, db_path)
-  resource_module = _MyResourceModule()
-  preproc_module = _MyPreprocessingModule()
-  index_module = _MyIndexModule()
+  resource_module = MyResourceModule()
+  preproc_module = MyPreprocessingModule()
+  index_module = MyIndexModule()
   modules = (
     resource_module,
     preproc_module,

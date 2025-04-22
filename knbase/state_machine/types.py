@@ -20,7 +20,8 @@ class PreprocessingEvent:
   module: PreprocessingModule
   resource_hash: bytes
   from_resource_hash: bytes | None
-  path: Path
+  resource_path: Path
+  resource_content_type: str
   created_at: int
 
 @dataclass
