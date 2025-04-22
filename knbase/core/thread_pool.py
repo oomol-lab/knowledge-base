@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Callable, TypeVar, Generic
 from threading import Thread, Lock, Event
 
+from ..sqlite3_pool import build_thread_pool, release_thread_pool
 from .waker import Waker, WakerDidStop
 
 
@@ -57,6 +58,7 @@ class _Worker:
   is_working: bool
   did_removed: bool
 
+# [thread safe]
 class ThreadPool(Generic[R]):
   def __init__(self) -> None:
     self._lock: Lock = Lock()
@@ -151,21 +153,25 @@ class ThreadPool(Generic[R]):
 
   def _run_in_background(self, worker: _Worker):
     func: None | Callable[[], None] = None
-    while True:
-      if worker.did_removed:
-        break
-      try:
-        func = self._waker.receive()
-      except WakerDidStop:
-        break
-      if func is None:
-        continue
-      try:
-        worker.is_working = True
-        result = func()
-        self._results_queue.complete_task(ExecuteSuccess(result=result))
-      except Exception as e:
-        print(e)
-        self._results_queue.complete_task(ExecuteFail(error=e))
-      finally:
-        worker.is_working = False
+    build_thread_pool()
+    try:
+      while True:
+        if worker.did_removed:
+          break
+        try:
+          func = self._waker.receive()
+        except WakerDidStop:
+          break
+        if func is None:
+          continue
+        try:
+          worker.is_working = True
+          result = func()
+          self._results_queue.complete_task(ExecuteSuccess(result=result))
+        except Exception as e:
+          print(e)
+          self._results_queue.complete_task(ExecuteFail(error=e))
+        finally:
+          worker.is_working = False
+    finally:
+      release_thread_pool()

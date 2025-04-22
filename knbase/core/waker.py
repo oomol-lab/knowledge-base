@@ -15,6 +15,7 @@ class _Handshake(Generic[P]):
   receive_event: Event | None
   payload: P | None
 
+# [thread safe]
 # why not use Semaphore or Queue?
 # - Queue cannot be canceled from the outside
 # - Semaphore cannot be locked thread-safely, making it difficult to ensure that there are no problems with the state

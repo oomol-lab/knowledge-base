@@ -20,13 +20,12 @@ class ProcessHub:
   def __init__(
         self,
         state_machine: StateMachine,
-        thread_pool: ThreadPool,
         preprocess_dir_path: Path,
       ) -> None:
 
     self._machine: StateMachine = state_machine
-    self._thread_pool: ThreadPool[None | Callable[[], None]] = thread_pool
     self._preprocess_dir_path: Path = preprocess_dir_path
+    self._thread_pool: ThreadPool[None | Callable[[], None]] = ThreadPool()
 
   def start_loop(self, workers: int) -> None:
     assert workers > 0

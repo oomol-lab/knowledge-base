@@ -71,10 +71,8 @@ class Resource:
 class ResourceEvent:
   id: int
   resource: Resource
+  resource_path: PathLike
   updating: Updating
-
-  def complete(self) -> None:
-    self.resource.base.resource_module.complete_event(self)
 
 class ResourceModule(Module):
   @abstractmethod
