@@ -1,9 +1,8 @@
 from typing import Callable
 from pathlib import Path
-from queue import Queue, Empty
 from shutil import rmtree
 
-from .thread_pool import ThreadPool
+from .thread_pool import ThreadPool, ExecuteSuccess, ExecuteFail, NoMoreExecutions
 from .waker import WakerDidStop
 
 from ..module import InterruptedException
@@ -26,9 +25,8 @@ class ProcessHub:
       ) -> None:
 
     self._machine: StateMachine = state_machine
-    self._thread_pool: ThreadPool = thread_pool
+    self._thread_pool: ThreadPool[None | Callable[[], None]] = thread_pool
     self._preprocess_dir_path: Path = preprocess_dir_path
-    self._main_invokers_queue: Queue[Callable[[], None]] = Queue(maxsize=0)
 
   def start_loop(self, workers: int) -> None:
     assert workers > 0
@@ -36,17 +34,11 @@ class ProcessHub:
     self._thread_pool.set_workers(workers)
 
     try:
-      no_events_times: int = 0
-      while True:
-        no_events = self._execute_and_check_no_events()
-        if no_events:
-          no_events_times += 1
-        else:
-          no_events_times = 0
-        if no_events_times == 1:
-          self._thread_pool.wait_util_no_invoking()
-        elif no_events_times > 1:
-          break
+      is_clear1: bool = False
+      is_clear2: bool = False
+      while not is_clear1 or not is_clear2:
+        is_clear1 = self._handle_events_from_machine()
+        is_clear2 = self._handle_callback_events()
 
     except WakerDidStop:
       pass
@@ -56,14 +48,8 @@ class ProcessHub:
 
     self._machine.goto_setting()
 
-  def _execute_and_check_no_events(self):
-    no_events: bool = True
-    while True:
-      try:
-        self._main_invokers_queue.get_nowait()()
-        no_events = False
-      except Empty:
-        break
+  def _handle_events_from_machine(self) -> bool:
+    is_clear = True
 
     while True:
       event = self._machine.pop_removed_resource_event()
@@ -72,7 +58,7 @@ class ProcessHub:
       self._thread_pool.execute(
         func=lambda: self._handle_removed_resource_event(event),
       )
-      no_events = False
+      is_clear = False
 
     while True:
       event = self._machine.pop_handle_index_event()
@@ -81,19 +67,39 @@ class ProcessHub:
       self._thread_pool.execute(
         func=lambda: self._handle_index_event(event),
       )
-      no_events = False
+      is_clear = False
 
     event = self._machine.pop_preproc_event()
     if event is not None:
       self._thread_pool.execute(
         func=lambda: self._handle_preproc_event(event),
       )
-      no_events = False
+      is_clear = False
 
-    return no_events
+    return is_clear
+
+  def _handle_callback_events(self) -> bool:
+    is_clear = True
+
+    while True:
+      result = self._thread_pool.pop_result()
+      if isinstance(result, NoMoreExecutions):
+        break
+
+      elif isinstance(result, ExecuteFail):
+        is_clear = False
+        print(result.error)
+
+      elif isinstance(result, ExecuteSuccess):
+        is_clear = False
+        callback_in_main = result.result
+        if callback_in_main is not None:
+          callback_in_main()
+
+    return is_clear
 
   # running in background thread
-  def _handle_removed_resource_event(self, event: RemovedResourceEvent):
+  def _handle_removed_resource_event(self, event: RemovedResourceEvent) -> None:
     resource_dir_path = self._preprocess_dir_path.joinpath(
       str(event.base.id),
       event.hash.hex(),
@@ -101,7 +107,7 @@ class ProcessHub:
     rmtree(resource_dir_path, ignore_errors=True)
 
   # running in background thread
-  def _handle_preproc_event(self, event: PreprocessingEvent):
+  def _handle_preproc_event(self, event: PreprocessingEvent) -> None | Callable[[], None]:
     latest_cache_path: Path | None = None
     workspace_path = self._preprocess_dir_path.joinpath(
       str(event.base.id),
@@ -149,20 +155,15 @@ class ProcessHub:
           meta=result.meta,
         ))
     except InterruptedException:
-      return
+      return None
 
-    except Exception as e:
-      print(e)
-
-    self._main_invokers_queue.put(
-      item=lambda: self._machine.complete_preproc_task(
-        event=event,
-        document_descriptions=documents
-      ),
+    return lambda: self._machine.complete_preproc_task(
+      event=event,
+      document_descriptions=documents
     )
 
   # running in background thread
-  def _handle_index_event(self, event: HandleIndexEvent):
+  def _handle_index_event(self, event: HandleIndexEvent) -> None | Callable[[], None]:
     try:
       if event.operation == IndexTaskOperation.CREATE:
         event.module.add(
@@ -181,12 +182,6 @@ class ProcessHub:
         raise ValueError(f"Unknown operation: {event.operation}")
 
     except InterruptedException:
-      return
+      return None
 
-    except Exception as e:
-      print(e)
-
-    self._main_invokers_queue.put(
-      item=lambda: self._machine.complete_index_task(event),
-    )
-
+    return lambda: self._machine.complete_index_task(event)
