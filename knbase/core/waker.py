@@ -28,6 +28,22 @@ class Waker(Generic[P]):
   def did_stop(self) -> bool:
     return self._did_stop
 
+  # to wake up all waiting threads and do nothing if there are no waiting threads
+  def broadcast(self, payload: P) -> None:
+    with self._lock:
+      removed_indexes: set[int] = set()
+      for i, handshake in enumerate(self._handshakes):
+        if handshake.receive_event is not None:
+          handshake.payload = payload
+          handshake.receive_event.set()
+          removed_indexes.add(i)
+
+      if len(removed_indexes) > 0:
+        self._handshakes = [
+          h for i, h in enumerate(self._handshakes)
+          if i not in removed_indexes
+        ]
+
   def push(self, payload: P):
     handshake: _Handshake[P] | None = None
     with self._lock:
@@ -67,7 +83,8 @@ class Waker(Generic[P]):
           payload=None,
         )
         self._handshakes.append(handshake)
-      else:
+
+      elif handshake.push_event is not None:
         handshake.push_event.set()
 
     handshake.receive_event.wait()
