@@ -1,5 +1,5 @@
 from io import BufferedReader
-from typing import Generator
+from typing import Any, Generator
 from pathlib import Path
 
 from knbase.module import (
@@ -31,19 +31,32 @@ class MyPreprocessingModule(PreprocessingModule):
     super().__init__("my_preproc")
 
   def preprocess(
-      self,
-      workspace_path: Path,
-      latest_cache_path: Path | None,
-      resource: Resource,
-    ) -> list[PreprocessingResult]:
+        self,
+        workspace_path: Path,
+        latest_cache_path: Path | None,
+        base_id: int,
+        resource_hash: bytes,
+        resource_path: Path,
+        resource_content_type: str,
+      ) -> list[PreprocessingResult]:
     raise NotImplementedError()
 
 class MyIndexModule(IndexModule):
   def __init__(self):
     super().__init__("my_index")
 
-  def create(self, id: int):
+  def add(
+        self,
+        base_id: int,
+        document_hash: bytes,
+        document_path: Path,
+        document_meta: Any,
+      ) -> None:
     raise NotImplementedError()
 
-  def remove(self, id: int):
+  def remove(
+        self,
+        base_id: int,
+        document_hash: bytes,
+      ) -> None:
     raise NotImplementedError()

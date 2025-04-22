@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Callable
-from threading import Thread, Lock
+from threading import Thread, Lock, Event
 
 from .waker import Waker, WakerDidStop
 
@@ -17,10 +17,17 @@ class ThreadPool:
     self._lock: Lock = Lock()
     self._workers: list[_Worker] = []
     self._waker: Waker[None | Callable[[], None]] = Waker()
+    self._invoking_lock: Lock = Lock()
+    self._invoking_count: int = 0
+    self._no_invoking_event: Event = Event()
+    self._no_invoking_event.set()
 
   @property
   def did_stop(self) -> bool:
     return self._waker.did_stop
+
+  def wait_util_no_invoking(self) -> None:
+    self._no_invoking_event.wait()
 
   def workers(self) -> int:
     return len(self._workers)
@@ -111,9 +118,17 @@ class ThreadPool:
       if func is None:
         continue
       try:
+        with self._invoking_lock:
+          self._invoking_count += 1
+          if self._invoking_count == 1:
+            self._no_invoking_event.clear()
         worker.is_working = True
         func()
       except Exception as e:
         print(e)
       finally:
         worker.is_working = False
+        with self._invoking_lock:
+          self._invoking_count -= 1
+          if self._invoking_count == 0:
+            self._no_invoking_event.set()

@@ -1,6 +1,7 @@
 from typing import Callable
 from pathlib import Path
 from queue import Queue, Empty
+from shutil import rmtree
 
 from .thread_pool import ThreadPool
 from .waker import WakerDidStop
@@ -11,6 +12,7 @@ from ..state_machine import (
   DocumentDescription,
   PreprocessingEvent,
   HandleIndexEvent,
+  IndexTaskOperation,
   RemovedResourceEvent,
 )
 
@@ -32,103 +34,159 @@ class ProcessHub:
     assert workers > 0
     self._machine.goto_processing()
     self._thread_pool.set_workers(workers)
+
     try:
+      no_events_times: int = 0
       while True:
-        while True:
-          try:
-            self._main_invokers_queue.get_nowait()()
-          except Empty:
-            break
-        while True:
-          event = self._machine.pop_removed_resource_event()
-          if event is None:
-            break
-          self._thread_pool.execute(
-            func=lambda: self._handle_removed_resource_event(event),
-          )
-        while True:
-          event = self._machine.pop_handle_index_event()
-          if event is None:
-            break
-          self._thread_pool.execute(
-            func=lambda: self._handle_index_event(event),
-          )
-        event = self._machine.pop_preproc_event()
-        if event is not None:
-          self._thread_pool.execute(
-            func=lambda: self._handle_preproc_event(event),
-          )
+        no_events = self._execute_and_check_no_events()
+        if no_events:
+          no_events_times += 1
+        else:
+          no_events_times = 0
+        if no_events_times == 1:
+          self._thread_pool.wait_util_no_invoking()
+        elif no_events_times > 1:
+          break
+
     except WakerDidStop:
       pass
 
     finally:
       self._thread_pool.set_workers(0)
 
+    self._machine.goto_setting()
+
+  def _execute_and_check_no_events(self):
+    no_events: bool = True
+    while True:
+      try:
+        self._main_invokers_queue.get_nowait()()
+        no_events = False
+      except Empty:
+        break
+
+    while True:
+      event = self._machine.pop_removed_resource_event()
+      if event is None:
+        break
+      self._thread_pool.execute(
+        func=lambda: self._handle_removed_resource_event(event),
+      )
+      no_events = False
+
+    while True:
+      event = self._machine.pop_handle_index_event()
+      if event is None:
+        break
+      self._thread_pool.execute(
+        func=lambda: self._handle_index_event(event),
+      )
+      no_events = False
+
+    event = self._machine.pop_preproc_event()
+    if event is not None:
+      self._thread_pool.execute(
+        func=lambda: self._handle_preproc_event(event),
+      )
+      no_events = False
+
+    return no_events
+
+  # running in background thread
+  def _handle_removed_resource_event(self, event: RemovedResourceEvent):
+    resource_dir_path = self._preprocess_dir_path.joinpath(
+      str(event.base.id),
+      event.hash.hex(),
+    )
+    rmtree(resource_dir_path, ignore_errors=True)
+
   # running in background thread
   def _handle_preproc_event(self, event: PreprocessingEvent):
     latest_cache_path: Path | None = None
     workspace_path = self._preprocess_dir_path.joinpath(
       str(event.base.id),
-      event.module.id,
       event.resource_hash.hex(),
+      event.module.id,
     )
     workspace_path.mkdir(parents=True, exist_ok=True)
 
     if event.from_resource_hash is not None:
       latest_cache_path = self._preprocess_dir_path.joinpath(
         str(event.base.id),
-        event.module.id,
         event.from_resource_hash.hex(),
+        event.module.id,
       )
       if not latest_cache_path.exists():
         latest_cache_path = None
 
+    documents: list[DocumentDescription] = []
     try:
       results = event.module.preprocess(
         workspace_path=workspace_path,
         latest_cache_path=latest_cache_path,
+        base_id=event.base.id,
         resource_hash=event.resource_hash,
         resource_path=event.resource_path,
         resource_content_type=event.resource_content_type,
       )
+      for i, result in enumerate(results):
+        base_path: Path
+        if not result.from_cache:
+          base_path = workspace_path
+        else:
+          if latest_cache_path is None:
+            raise ValueError(f"[{i}].from_cache is True but latest_cache_path is None")
+          base_path = latest_cache_path
+
+        path = Path(result.path)
+        if path.is_absolute():
+          raise ValueError(f"[{i}].path must be relative")
+
+        path = base_path.joinpath(path)
+        documents.append(DocumentDescription(
+          hash=result.hash,
+          path=path,
+          meta=result.meta,
+        ))
     except InterruptedException:
       return
 
     except Exception as e:
       print(e)
 
-    documents: list[DocumentDescription] = []
-    for i, result in enumerate(results):
-      base_path: Path
-      if not result.from_cache:
-        base_path = workspace_path
-      else:
-        if latest_cache_path is None:
-          raise ValueError(f"[{i}].from_cache is True but latest_cache_path is None")
-        base_path = latest_cache_path
-
-      path = Path(result.path)
-      if path.is_absolute():
-        raise ValueError(f"[{i}].path must be relative")
-
-      path = base_path.joinpath(path)
-      documents.append(DocumentDescription(
-        hash=result.hash,
-        path=path,
-        meta=result.meta,
-      ))
-
     self._main_invokers_queue.put(
       item=lambda: self._machine.complete_preproc_task(
         event=event,
         document_descriptions=documents
-      )
+      ),
     )
 
   # running in background thread
   def _handle_index_event(self, event: HandleIndexEvent):
-    pass
+    try:
+      if event.operation == IndexTaskOperation.CREATE:
+        event.module.add(
+          base_id=event.base.id,
+          document_hash=event.document_hash,
+          document_path=event.document_path,
+          document_meta=event.document_meta,
+        )
+      elif event.operation == IndexTaskOperation.REMOVE:
+        event.module.remove(
+          base_id=event.base.id,
+          document_hash=event.document_hash,
+          document_path=event.document_path,
+        )
+      else:
+        raise ValueError(f"Unknown operation: {event.operation}")
 
-  # running in background thread
-  def _handle_removed_resource_event(self, event: RemovedResourceEvent):
-    pass
+    except InterruptedException:
+      return
+
+    except Exception as e:
+      print(e)
+
+    self._main_invokers_queue.put(
+      item=lambda: self._machine.complete_index_task(event),
+    )
+

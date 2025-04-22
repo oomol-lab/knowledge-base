@@ -29,7 +29,7 @@ class HandleIndexEvent:
   proto_event_id: int
   task_id: int
   base: KnowledgeBase
-  index_module: IndexModule
+  module: IndexModule
   operation: IndexTaskOperation
   document_hash: bytes
   document_path: Path

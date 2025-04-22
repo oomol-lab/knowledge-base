@@ -251,7 +251,7 @@ class StateMachine:
       proto_event_id=task.event,
       task_id=task.id,
       base=task.base,
-      index_module=task.index_module,
+      module=task.index_module,
       operation=task.operation,
       document_hash=document.document_hash,
       document_path=document.path,
