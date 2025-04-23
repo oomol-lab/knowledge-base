@@ -92,6 +92,16 @@ class PreprocessingResult(Generic[T]):
 
 class PreprocessingModule(Module, Generic[T]):
   @abstractmethod
+  def acceptant(
+        self,
+        base_id: int,
+        resource_hash: bytes,
+        resource_path: Path,
+        resource_content_type: str,
+      ) -> bool:
+    raise NotImplementedError()
+
+  @abstractmethod
   def preprocess(
         self,
         workspace_path: Path,

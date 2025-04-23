@@ -4,12 +4,14 @@
   "files.trimTrailingWhitespace": true,
   "cSpell.words": [
     "annot",
+    "annots",
     "descr",
     "knbase",
     "knbases",
     "lastrowid",
     "pdfplumber",
     "pikepdf",
-    "preproc"
+    "preproc",
+    "pyyaml"
   ],
 }

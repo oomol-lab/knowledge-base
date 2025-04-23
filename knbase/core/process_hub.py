@@ -126,33 +126,39 @@ class ProcessHub:
 
     documents: list[DocumentDescription] = []
     try:
-      results = event.module.preprocess(
-        workspace_path=workspace_path,
-        latest_cache_path=latest_cache_path,
+      if event.module.acceptant(
         base_id=event.base.id,
         resource_hash=event.resource_hash,
         resource_path=event.resource_path,
         resource_content_type=event.resource_content_type,
-      )
-      for i, result in enumerate(results):
-        base_path: Path
-        if not result.from_cache:
-          base_path = workspace_path
-        else:
-          if latest_cache_path is None:
-            raise ValueError(f"[{i}].from_cache is True but latest_cache_path is None")
-          base_path = latest_cache_path
+      ):
+        results = event.module.preprocess(
+          workspace_path=workspace_path,
+          latest_cache_path=latest_cache_path,
+          base_id=event.base.id,
+          resource_hash=event.resource_hash,
+          resource_path=event.resource_path,
+          resource_content_type=event.resource_content_type,
+        )
+        for i, result in enumerate(results):
+          base_path: Path
+          if not result.from_cache:
+            base_path = workspace_path
+          else:
+            if latest_cache_path is None:
+              raise ValueError(f"[{i}].from_cache is True but latest_cache_path is None")
+            base_path = latest_cache_path
 
-        path = Path(result.path)
-        if path.is_absolute():
-          raise ValueError(f"[{i}].path must be relative")
+          path = Path(result.path)
+          if path.is_absolute():
+            raise ValueError(f"[{i}].path must be relative")
 
-        path = base_path.joinpath(path)
-        documents.append(DocumentDescription(
-          hash=result.hash,
-          path=path,
-          meta=result.meta,
-        ))
+          path = base_path.joinpath(path)
+          documents.append(DocumentDescription(
+            hash=result.hash,
+            path=path,
+            meta=result.meta,
+          ))
     except InterruptedException:
       return None
 

@@ -1,3 +1,6 @@
+# knbase
+pyyaml==6.0.2
+
 # knbase-pdf-parser
 pikepdf==9.2.1
 pdfplumber==0.11.4

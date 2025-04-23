@@ -28,6 +28,15 @@ class MyPreprocessingModule(PreprocessingModule[Any]):
   def __init__(self):
     super().__init__("my_preproc")
 
+  def acceptant(
+        self,
+        base_id: int,
+        resource_hash: bytes,
+        resource_path: Path,
+        resource_content_type: str,
+      ) -> bool:
+    raise NotImplementedError()
+
   def preprocess(
         self,
         workspace_path: Path,
