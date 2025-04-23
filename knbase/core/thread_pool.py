@@ -1,3 +1,5 @@
+import traceback
+
 from dataclasses import dataclass
 from typing import Callable, TypeVar, Generic
 from threading import Thread, Lock, Event
@@ -170,7 +172,7 @@ class ThreadPool(Generic[R]):
           result = func()
           self._results_queue.complete_task(ExecuteSuccess(result=result))
         except Exception as e:
-          print(e)
+          traceback.print_exc()
           self._results_queue.complete_task(ExecuteFail(error=e))
         finally:
           worker.is_working = False

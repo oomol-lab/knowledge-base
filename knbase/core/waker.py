@@ -46,36 +46,40 @@ class Waker(Generic[P]):
         ]
 
   def push(self, payload: P):
-    handshake: _Handshake[P] | None = None
+    wait_handshake: _Handshake[P] | None = None
     with self._lock:
       if self._did_stop:
         raise WakerDidStop()
       handshake = self._choose_handshake(
-        select=lambda x: x.push_event is None,
+        select=lambda x: x.receive_event is not None,
       )
-      if handshake is None:
-        handshake = _Handshake(
+      if handshake is not None:
+        handshake.payload = payload
+        handshake.receive_event.set()
+      else:
+        wait_handshake = _Handshake(
           push_event=Event(),
           receive_event=None,
           payload=payload,
         )
-        self._handshakes.append(handshake)
-      else:
-        handshake.payload = payload
-        handshake.receive_event.set()
+        self._handshakes.append(wait_handshake)
 
-    handshake.push_event.wait()
+    if wait_handshake is not None:
+      wait_handshake.push_event.wait()
+
     with self._lock:
       if self._did_stop:
         raise WakerDidStop()
 
   def receive(self) -> P:
-    handshake: _Handshake[P] | None = None
+    handshake: _Handshake[P] | None
+    wait_handshake: _Handshake[P] | None = None
+
     with self._lock:
       if self._did_stop:
         raise WakerDidStop()
       handshake = self._choose_handshake(
-        select=lambda x: x.receive_event is None,
+        select=lambda x: x.push_event is not None,
       )
       if handshake is None:
         handshake = _Handshake(
@@ -84,14 +88,18 @@ class Waker(Generic[P]):
           payload=None,
         )
         self._handshakes.append(handshake)
+        wait_handshake = handshake
 
       elif handshake.push_event is not None:
         handshake.push_event.set()
 
-    handshake.receive_event.wait()
+    if wait_handshake is not None:
+      wait_handshake.receive_event.wait()
+
     with self._lock:
       if self._did_stop:
         raise WakerDidStop()
+
     return handshake.payload
 
   def stop(self) -> None:

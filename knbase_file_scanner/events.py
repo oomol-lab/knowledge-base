@@ -11,8 +11,11 @@ class EventTarget(Enum):
   File = 0
   Directory = 1
 
-def scan_events(cursor: Cursor) -> Generator[int, None, None]:
-  cursor.execute("SELECT id FROM events ORDER BY id")
+def scan_events(cursor: Cursor, base_id: int) -> Generator[int, None, None]:
+  cursor.execute(
+    "SELECT id FROM events WHERE base = ? ORDER BY id",
+    (base_id,),
+  )
   while True:
     rows = cursor.fetchmany(size=100)
     if len(rows) == 0:
@@ -90,7 +93,7 @@ def record_removed_event(cursor: Cursor, target: EventTarget, path: str, base_id
 
   if row is None:
     cursor.execute(
-      "INSERT INTO events (kind, target, path, base, mtime, removed_hash) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO events (kind, target, path, base, mtime, removed_hash) VALUES (?, ?, ?, ?, ?, ?)",
       (EventKind.Removed.value, target.value, path, base_id, mtime, removed_hash),
     )
   else:

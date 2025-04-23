@@ -30,25 +30,23 @@ class FileScannerModule(ResourceModule[ResourceBaseMeta, None]):
 
   def scan(self, base: KnowledgeBase) -> Generator[ResourceEvent, None, None]:
     base_path = base.resource_params["path"]
+    sended_events = self._sended_events(base.id)
     event_ids = list(self._scanner.scan(
       base_id=base.id,
       base_path=base_path,
     ))
     for event_id in event_ids:
-      event = self._scanner.parse_event(event_id)
-      if event.target == EventTarget.File:
-        event = self._transform_event(event, base, base_path)
-        self._base_sended_events[event.id] = (event, event, event.resource.hash)
+      e = self._scanner.parse_event(event_id)
+      if e.target == EventTarget.File:
+        event = self._transform_event(e, base, base_path)
+        sended_events[e.id] = (e, event, event.resource.hash)
         yield event
+      else:
+        e.close()
 
   def complete_event(self, event: ResourceEvent) -> None:
     base_id = event.resource.base.id
-    sended_events = self._base_sended_events.get(base_id, None)
-    if sended_events is None:
-      sended_events = {}
-      self._base_sended_events[base_id] = sended_events
-
-    sended = sended_events.pop(event.id, None)
+    sended = self._sended_events(base_id).pop(event.id, None)
     if sended is None:
       return
 
@@ -64,8 +62,15 @@ class FileScannerModule(ResourceModule[ResourceBaseMeta, None]):
       for e, _, hash in sended_events.values():
         e.close(hash)
 
+  def _sended_events(self, base_id: int) -> _SendedEventDict:
+    sended_events = self._base_sended_events.get(base_id, None)
+    if sended_events is None:
+      sended_events = {}
+      self._base_sended_events[base_id] = sended_events
+    return sended_events
+
   def _transform_event(self, event: Event, base: KnowledgeBase, base_path: str) -> ResourceEvent:
-    resource_path = Path(os.path.join(base_path, event.path))
+    resource_path = Path(os.path.join(base_path, f".{event.path}"))
     resource_hash: bytes
 
     if event.kind in (EventKind.Added, EventKind.Updated):
@@ -77,7 +82,7 @@ class FileScannerModule(ResourceModule[ResourceBaseMeta, None]):
       id=event.path,
       hash=resource_hash,
       base=base,
-      content_type="TODO",
+      content_type="TODO:",
       meta=None,
       updated_at=event.mtime,
     )

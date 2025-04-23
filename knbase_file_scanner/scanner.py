@@ -57,16 +57,15 @@ class Scanner:
         assert_continue()
         relative_path = next_relative_paths.pop()
         children = self._scan_and_report(
-          conn, cursor,
-          base_id, base_path,
-          relative_path,
+          conn, cursor, base_id,
+          base_path, relative_path,
         )
         if children is not None:
           for child in children:
             next_relative_path = os.path.join(relative_path, child)
             next_relative_paths.insert(0, next_relative_path)
 
-      yield from scan_events(cursor)
+      yield from scan_events(cursor, base_id)
 
   def parse_event(self, event_id: int) -> Event:
     return self._event_parser.parse(event_id)
@@ -147,7 +146,7 @@ class Scanner:
 
       if old_file is None:
         cursor.execute(
-          "INSERT INTO files (base, path, mtime, last_hash, children) VALUES (?, ?, ?, ?)",
+          "INSERT INTO files (base, path, mtime, last_hash, children) VALUES (?, ?, ?, ?, ?)",
           (base_id, new_path, new_mtime, new_last_hash, new_children),
         )
         record_added_event(cursor, new_target, new_path, base_id, new_mtime)

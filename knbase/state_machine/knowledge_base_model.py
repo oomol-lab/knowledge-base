@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any, Generator, Iterable
 from enum import Enum
-from json import dumps
+from json import loads, dumps
 from sqlite3 import Cursor
 
 from .common import FRAMEWORK_DB
@@ -26,7 +26,7 @@ class KnowledgeBaseModel:
     for row in fetchmany(cursor):
       knbase_id = row[0]
       resource_module_id = row[1]
-      resource_params = row[2]
+      resource_params = loads(row[2])
       resource_module = self._ctx.module(resource_module_id)
       knbase = KnowledgeBase(
         id=knbase_id,
@@ -50,7 +50,7 @@ class KnowledgeBaseModel:
           ProcessRecord(
             id=cursor.lastrowid,
             module=module,
-            params=params,
+            params=loads(params),
           )
         )
       yield knbase

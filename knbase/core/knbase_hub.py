@@ -1,9 +1,9 @@
-from typing import Iterable
+from typing import Any, Iterable, Generator
 from os import PathLike
 from pathlib import Path
 
 from ..sqlite3_pool import build_thread_pool, release_thread_pool
-from ..module import Module
+from ..module import T, R, Module, KnowledgeBase, ResourceModule, PreprocessingModule, IndexModule
 from ..state_machine import StateMachine, StateMachineState
 from .scan_hub import ScanHub
 from .process_hub import ProcessHub
@@ -42,3 +42,20 @@ class KnowledgeBasesHub:
       self._process_hub.start_loop(self._process_workers)
     finally:
       release_thread_pool()
+
+  def get_knowledge_bases(self) -> Generator[KnowledgeBase, None, None]:
+    yield from self._machine.get_knowledge_bases()
+
+  def create_knowledge_base(
+        self,
+        resource_module: ResourceModule[T, R],
+        resource_param: T,
+        preproc_params: Iterable[tuple[PreprocessingModule, Any]] = (),
+        index_params: Iterable[tuple[IndexModule, Any]] = (),
+      ) -> KnowledgeBase[T, R]:
+
+    return self._machine.create_knowledge_base(
+      resource_param=(resource_module, resource_param),
+      preproc_params=preproc_params,
+      index_params=index_params,
+    )

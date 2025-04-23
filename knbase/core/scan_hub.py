@@ -1,3 +1,5 @@
+import traceback
+
 from dataclasses import dataclass
 from threading import Event
 from pathlib import Path
@@ -41,8 +43,8 @@ class ScanHub:
             future.result()
           except WakerDidStop:
             pass
-          except Exception as e:
-            print(e)
+          except Exception:
+            traceback.print_exc()
 
     self._machine.goto_setting()
 
@@ -57,9 +59,9 @@ class ScanHub:
             resource=task.event.resource,
             path=Path(task.event.resource_path),
           )
-        except Exception as e:
+        except Exception:
           task.interrupted = True
-          print(e)
+          traceback.print_exc()
 
         finally:
           task.done.set()

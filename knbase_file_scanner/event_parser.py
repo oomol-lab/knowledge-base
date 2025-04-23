@@ -11,7 +11,7 @@ class Event:
   path: str
   removed_hash: bytes | None
   mtime: float
-  db: SQLite3Pool | None = None
+  db: SQLite3Pool
 
   def close(self, new_hash: bytes | None = None):
     if self.db is None:

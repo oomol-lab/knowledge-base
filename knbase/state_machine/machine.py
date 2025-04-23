@@ -4,7 +4,7 @@ from enum import Enum
 from sqlite3 import Cursor
 
 from ..sqlite3_pool import SQLite3Pool
-from ..module import Resource, Module, ResourceModule, PreprocessingModule, IndexModule
+from ..module import T, R, Resource, Module, ResourceModule, PreprocessingModule, IndexModule
 from .common import FRAMEWORK_DB
 from .types import DocumentDescription, PreprocessingEvent, HandleIndexEvent, RemovedResourceEvent
 from .module_context import ModuleContext
@@ -90,10 +90,10 @@ class StateMachine:
 
   def create_knowledge_base(
         self,
-        resource_param: tuple[ResourceModule, Any],
+        resource_param: tuple[ResourceModule[T, R], T],
         preproc_params: Iterable[tuple[PreprocessingModule, Any]],
         index_params: Iterable[tuple[IndexModule, Any]],
-      ) -> KnowledgeBase:
+      ) -> KnowledgeBase[T, R]:
 
     assert self._state == StateMachineState.SETTING
     with self._db.connect() as (cursor, conn):
