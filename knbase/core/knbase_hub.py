@@ -33,7 +33,7 @@ class KnowledgeBasesHub:
     self._scan_workers: int = scan_workers
     self._process_workers: int = process_workers
 
-  def scan(self):
+  def scan(self) -> None:
     build_thread_pool()
     try:
       if self._machine.state == StateMachineState.PROCESSING:

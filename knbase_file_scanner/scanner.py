@@ -280,7 +280,7 @@ def _create_tables(cursor: Cursor):
       path TEXT NOT NULL,
       base INTEGER NOT NULL,
       mtime REAL NOT NULL,
-      removed_hash BLOB,
+      removed_hash BLOB
     )
   """)
   cursor.execute("""

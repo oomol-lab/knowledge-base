@@ -100,8 +100,9 @@ class ThreadPool(Generic[R]):
           to_start_threads.append(thread)
 
       elif len(self._workers) > workers:
-        to_removed_workers = workers - len(self._workers)
+        to_removed_workers = len(self._workers) - workers
         removed_indexes: set[int] = set()
+
         for want_is_working in (False, True):
           for i, worker in enumerate(self._workers):
             if len(removed_indexes) >= to_removed_workers:
