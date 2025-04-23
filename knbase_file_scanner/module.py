@@ -37,12 +37,12 @@ class FileScannerModule(ResourceModule[ResourceBaseMeta, None]):
     ))
     for event_id in event_ids:
       e = self._scanner.parse_event(event_id)
-      if e.target == EventTarget.File:
+      if e.target == EventTarget.Directory:
+        e.close()
+      elif e.target == EventTarget.File:
         event = self._transform_event(e, base, base_path)
         sended_events[e.id] = (e, event, event.resource.hash)
         yield event
-      else:
-        e.close()
 
   def complete_event(self, event: ResourceEvent) -> None:
     base_id = event.resource.base.id
@@ -103,7 +103,7 @@ class FileScannerModule(ResourceModule[ResourceBaseMeta, None]):
 
   def _sha256(self, file_path: Path) -> bytes:
     hash = sha256()
-    chunk_size=65536
+    chunk_size = 8192
     with open(file_path, "rb") as f:
       for chunk in iter(lambda: f.read(chunk_size), b""):
         hash.update(chunk)

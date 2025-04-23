@@ -90,7 +90,6 @@ def record_removed_event(cursor: Cursor, target: EventTarget, path: str, base_id
     (base_id, path, target.value),
   )
   row = cursor.fetchone()
-
   if row is None:
     cursor.execute(
       "INSERT INTO events (kind, target, path, base, mtime, removed_hash) VALUES (?, ?, ?, ?, ?, ?)",

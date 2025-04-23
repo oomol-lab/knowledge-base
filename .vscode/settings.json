@@ -3,10 +3,13 @@
   "editor.insertSpaces": true,
   "files.trimTrailingWhitespace": true,
   "cSpell.words": [
+    "annot",
     "descr",
     "knbase",
     "knbases",
     "lastrowid",
+    "pdfplumber",
+    "pikepdf",
     "preproc"
   ],
 }
