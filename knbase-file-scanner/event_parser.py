@@ -7,16 +7,30 @@ class Event:
   id: int
   kind: EventKind
   target: EventTarget
-  scope: str
+  base_id: str
   path: str
+  removed_hash: bytes | None
   mtime: float
   db: SQLite3Pool | None = None
 
-  def close(self):
-    if self.db is not None:
-      with self.db.connect() as (cursor, conn):
+  def close(self, new_hash: bytes | None = None):
+    if self.db is None:
+      return
+
+    with self.db.connect() as (cursor, conn):
+      try:
+        cursor.execute("BEGIN TRANSACTION")
+        if new_hash is not None:
+          cursor.execute(
+            "UPDATE files SET last_hash = ? WHERE base = ? AND path = ?",
+            (new_hash, self.base_id, self.path),
+          )
         cursor.execute("DELETE FROM events WHERE id = ?", (self.id,))
         conn.commit()
+
+      except Exception as e:
+        conn.rollback()
+        raise e
 
 class EventParser:
   def __init__(self, db: SQLite3Pool):
@@ -25,7 +39,7 @@ class EventParser:
   def parse(self, event_id: int) -> Event:
     with self._db.connect() as (cursor, _):
       cursor.execute(
-        "SELECT kind, target, path, scope, mtime FROM events WHERE id = ?",
+        "SELECT kind, target, path, base, mtime, removed_hash FROM events WHERE id = ?",
         (event_id,)
       )
       row = cursor.fetchone()
@@ -37,7 +51,8 @@ class EventParser:
         kind=EventKind(row[0]),
         target=EventTarget(row[1]),
         path=row[2],
-        scope=row[3],
+        base_id=row[3],
         mtime=row[4],
+        removed_hash=row[5],
         db=self._db,
       )

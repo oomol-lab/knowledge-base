@@ -17,7 +17,7 @@ class ResourceModel:
         self,
         cursor: Cursor,
         knbase: KnowledgeBase,
-        resource_id: int
+        resource_id: str,
       ) -> Resource | None:
 
     cursor.execute(
@@ -120,7 +120,7 @@ class ResourceModel:
       ),
     )
 
-  def remove_resource(self, cursor: Cursor, knbase: KnowledgeBase, resource_id: int) -> None:
+  def remove_resource(self, cursor: Cursor, knbase: KnowledgeBase, resource_id: str) -> None:
     cursor.execute(
       "DELETE FROM resources WHERE id = ? AND knbase = ?",
       (resource_id, knbase.id),
@@ -130,7 +130,7 @@ def _create_tables(cursor: Cursor):
   cursor.execute("""
     CREATE TABLE resources (
       knbase INTEGER KEY,
-      id INTEGER KEY,
+      id TEXT KEY,
       hash BLOB NOT NULL,
       content_type TEXT NOT NULL,
       meta TEXT NOT NULL,

@@ -1,4 +1,3 @@
-from io import BufferedReader
 from typing import Any, Generator
 from pathlib import Path
 
@@ -7,26 +6,25 @@ from knbase.module import (
   PreprocessingModule,
   IndexModule,
   PreprocessingResult,
-  Resource,
   ResourceEvent,
   KnowledgeBase,
 )
 
 
-class MyResourceModule(ResourceModule):
+class MyResourceModule(ResourceModule[Any, Any]):
   def __init__(self):
     super().__init__("my_res")
 
-  def scan(self, base: KnowledgeBase) -> Generator[ResourceEvent, None, None]:
+  def scan(self, base: KnowledgeBase[Any, Any]) -> Generator[ResourceEvent[Any, Any], None, None]:
     raise NotImplementedError()
 
-  def open(self, resource: Resource) -> BufferedReader:
+  def complete_event(self, event: ResourceEvent[Any, Any]) -> None:
     raise NotImplementedError()
 
-  def complete_event(self, event: ResourceEvent) -> None:
+  def complete_scanning(self, base: KnowledgeBase[None, None]) -> None:
     raise NotImplementedError()
 
-class MyPreprocessingModule(PreprocessingModule):
+class MyPreprocessingModule(PreprocessingModule[Any]):
   def __init__(self):
     super().__init__("my_preproc")
 
@@ -38,10 +36,10 @@ class MyPreprocessingModule(PreprocessingModule):
         resource_hash: bytes,
         resource_path: Path,
         resource_content_type: str,
-      ) -> list[PreprocessingResult]:
+      ) -> list[PreprocessingResult[Any]]:
     raise NotImplementedError()
 
-class MyIndexModule(IndexModule):
+class MyIndexModule(IndexModule[Any]):
   def __init__(self):
     super().__init__("my_index")
 

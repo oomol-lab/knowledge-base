@@ -5,7 +5,7 @@ from shutil import rmtree
 from .thread_pool import ThreadPool, ExecuteSuccess, ExecuteFail, NoMoreExecutions
 from .waker import WakerDidStop
 
-from ..module import InterruptedException
+from ..interruption import InterruptedException
 from ..state_machine import (
   StateMachine,
   DocumentDescription,

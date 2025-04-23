@@ -4,7 +4,7 @@ from typing import cast
 
 _interrupted_event_val = local()
 
-class InterruptException(Exception):
+class InterruptedException(Exception):
   def __init__(self):
     super().__init__("Interrupt")
 
@@ -16,4 +16,4 @@ def assert_continue():
     return
   event = cast(Event, _interrupted_event_val.value)
   if event.is_set():
-    raise InterruptException()
+    raise InterruptedException()

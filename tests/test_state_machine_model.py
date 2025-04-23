@@ -39,7 +39,7 @@ class TestStateMachineModel(unittest.TestCase):
         second=0,
       )
       resource = Resource(
-        id=1,
+        id="1",
         hash=b"HASH1",
         base=knbase,
         content_type="text/plain",
@@ -63,7 +63,7 @@ class TestStateMachineModel(unittest.TestCase):
         second=1,
       )
       resource = Resource(
-        id=2,
+        id="2",
         hash=b"HASH1",
         base=knbase,
         content_type="text/plain",
@@ -87,7 +87,7 @@ class TestStateMachineModel(unittest.TestCase):
         second=2,
       )
       resource = Resource(
-        id=3,
+        id="3",
         hash=b"HASH3",
         base=knbase,
         content_type="text/plain",

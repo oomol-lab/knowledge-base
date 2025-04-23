@@ -69,8 +69,9 @@ class ScanHub:
 
   def _scan_in_background(self, base: KnowledgeBase):
     build_thread_pool()
+    module = base.resource_module
     try:
-      for event in base.resource_module.scan(base):
+      for event in module.scan(base):
         task = _Task(
           event=event,
           done=Event(),
@@ -80,6 +81,9 @@ class ScanHub:
         task.done.wait()
         if task.interrupted:
           break
+        module.complete_event(event)
+
     finally:
       self._waker.push(_AllTasksDone())
+      module.complete_scanning(base)
       release_thread_pool()

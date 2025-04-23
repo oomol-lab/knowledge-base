@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from io import BufferedReader
 from os import PathLike
-from typing import Any, Generator
+from typing import Any, Generator, TypeVar, Generic
 from dataclasses import dataclass
 from abc import abstractmethod, ABC
 from enum import Enum
 from pathlib import Path
 
 
-class InterruptedException(Exception):
-  pass
+T = TypeVar("T")
+R = TypeVar("R")
 
 class Updating(Enum):
   CREATE = 0,
@@ -27,17 +26,17 @@ class Module(ABC):
     return self._id
 
 @dataclass
-class ProcessRecord:
+class ProcessRecord(Generic[T]):
   id: int
   module: PreprocessingModule | IndexModule
-  params: Any
+  params: T
 
 @dataclass
-class KnowledgeBase:
+class KnowledgeBase(Generic[T, R]):
   id: int
-  resource_params: Any
-  resource_module: ResourceModule
-  process_records: list[ProcessRecord]
+  resource_params: T
+  resource_module: ResourceModule[T, R]
+  process_records: list[ProcessRecord[Any]]
 
   @property
   def preproc_modules(self) -> list[PreprocessingModule]:
@@ -56,45 +55,42 @@ class KnowledgeBase:
     ]
 
 @dataclass
-class Resource:
-  id: int
+class Resource(Generic[T, R]):
+  id: str
   hash: bytes
-  base: KnowledgeBase
+  base: KnowledgeBase[T, R]
   content_type: str
-  meta: Any
+  meta: R
   updated_at: int
 
-  def open(self) -> BufferedReader:
-    return self.base.resource_module.open(self)
-
 @dataclass
-class ResourceEvent:
+class ResourceEvent(Generic[T, R]):
   id: int
-  resource: Resource
+  resource: Resource[T, R]
   resource_path: PathLike
   updating: Updating
 
-class ResourceModule(Module):
+class ResourceModule(Module, Generic[T, R]):
   @abstractmethod
-  def scan(self, base: KnowledgeBase) -> Generator[ResourceEvent, None, None]:
+  def scan(self, base: KnowledgeBase[T, R]) -> Generator[ResourceEvent[T, R], None, None]:
     raise NotImplementedError()
 
   @abstractmethod
-  def open(self, resource: Resource) -> BufferedReader:
+  def complete_event(self, event: ResourceEvent[T, R]) -> None:
     raise NotImplementedError()
 
   @abstractmethod
-  def complete_event(self, event: ResourceEvent) -> None:
+  def complete_scanning(self, base: KnowledgeBase[T, R]) -> None:
     raise NotImplementedError()
 
 @dataclass
-class PreprocessingResult:
+class PreprocessingResult(Generic[T]):
   hash: bytes
   path: PathLike
-  meta: Any
+  meta: T
   from_cache: bool = False
 
-class PreprocessingModule(Module):
+class PreprocessingModule(Module, Generic[T]):
   @abstractmethod
   def preprocess(
         self,
@@ -104,17 +100,17 @@ class PreprocessingModule(Module):
         resource_hash: bytes,
         resource_path: Path,
         resource_content_type: str,
-      ) -> list[PreprocessingResult]:
+      ) -> list[PreprocessingResult[T]]:
     raise NotImplementedError()
 
-class IndexModule(Module):
+class IndexModule(Module, Generic[T]):
   @abstractmethod
   def add(
         self,
         base_id: int,
         document_hash: bytes,
         document_path: Path,
-        document_meta: Any,
+        document_meta: T,
       ) -> None:
     raise NotImplementedError()
 

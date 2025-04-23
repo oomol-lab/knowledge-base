@@ -46,7 +46,7 @@ class TestStateMachineLogic(unittest.TestCase):
     machine.goto_scanning()
     self.assertEqual(machine.state, StateMachineState.SCANNING)
     resource1 = Resource(
-      id=1,
+      id="1",
       hash=b"HASH-1",
       base=base,
       content_type="TXT",
@@ -54,7 +54,7 @@ class TestStateMachineLogic(unittest.TestCase):
       updated_at=0,
     )
     resource2 = Resource(
-      id=2,
+      id="2",
       hash=b"HASH-2",
       base=base,
       content_type="TXT",
