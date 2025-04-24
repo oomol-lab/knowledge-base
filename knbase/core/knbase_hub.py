@@ -40,6 +40,7 @@ class KnowledgeBasesHub:
         self._process_hub.start_loop(self._scan_workers)
       self._scan_hub.start_loop(self._scan_workers)
       self._process_hub.start_loop(self._process_workers)
+      self._machine.goto_setting()
     finally:
       release_thread_pool()
 

@@ -3,27 +3,24 @@ import pikepdf
 import pdfplumber
 import knbase
 
-from typing import Any, TypedDict, Generator
+from typing import Generator
 from pathlib import Path
 from json import loads, dumps
-from knbase import load_document, save_document, Document
+from knbase import load_document, save_document
 
 from .temp_folder import TempFolderHub
-from .extractor import extract_snapshot, extract_annotations
-from .meta import PDFPage, PDFAnnotation
+from .extractor import extract_snapshot, extract_annotations, extract_metadata_with_pdf
+from .meta import PDFMeta, PDFPage, PDFAnnotation
 from .utils import get_sha256
 
 
 _PDF_EXT = ".pdf"
-_SNAPSHOT_EXT = ".snapshot.txt"
-_ANNOTATION_EXT = ".annotation.json"
+_SNAPSHOT_EXT = ".snapshot.yaml"
+_ANNOTATION_EXT = ".annotation.yaml"
 
-class PDFDocumentMeta(TypedDict):
-  pass
+PreprocessingResult = knbase.PreprocessingResult[PDFMeta | PDFPage | PDFAnnotation]
 
-PreprocessingResult = knbase.PreprocessingResult[PDFDocumentMeta]
-
-class PDFParserModule(knbase.PreprocessingModule[PDFDocumentMeta]):
+class PDFParserModule(knbase.PreprocessingModule[PDFMeta | PDFPage | PDFAnnotation]):
   def __init__(self):
     super().__init__("pdf-parser")
 
@@ -48,7 +45,7 @@ class PDFParserModule(knbase.PreprocessingModule[PDFDocumentMeta]):
 
     results: list[PreprocessingResult] = []
     temp_folder = TempFolderHub(
-      base_path=str(workspace_path.joinpath("temp")),
+      base_path=workspace_path.joinpath("temp"),
     )
     with temp_folder.create() as folder:
       hash2origin_indexes: dict[str, int] = {}
@@ -72,15 +69,15 @@ class PDFParserModule(knbase.PreprocessingModule[PDFDocumentMeta]):
       for i, page_hash in enumerate(page_hashes):
         origin_index = hash2origin_indexes.get(page_hash, -1)
         if origin_index < 0:
-          for doc_path, document in self._extract_documents(
+          for doc_path, hash, meta in self._extract_documents(
             page_index=i,
             input_dir=folder.path,
             output_dir=output_path,
           ):
             results.append(PreprocessingResult(
-              hash=document.hash,
-              path=doc_path,
-              meta=document.meta,
+              hash=hash,
+              path=doc_path.relative_to(workspace_path),
+              meta=meta,
               from_cache=False,
             ))
         else:
@@ -98,10 +95,26 @@ class PDFParserModule(knbase.PreprocessingModule[PDFDocumentMeta]):
 
             results.append(PreprocessingResult(
               hash=hash,
-              path=target_path,
+              path=target_path.relative_to(workspace_path),
               meta=meta,
-              from_cache=True,
+              from_cache=(i == origin_index),
             ))
+
+      with pdfplumber.open(resource_path) as pdf:
+        pdf_meta = extract_metadata_with_pdf(pdf)
+        doc_path = workspace_path.joinpath("meta.yaml")
+        doc = save_document(
+          file_path=doc_path,
+          meta=pdf_meta,
+        )
+        results.append(PreprocessingResult(
+          hash=doc.hash,
+          path=doc_path.relative_to(workspace_path),
+          meta=pdf_meta,
+          from_cache=False,
+        ))
+
+    return results
 
   def _split_pages(self, pdf_path: Path, pages_path: Path, json_path: Path) -> list[str]:
     # https://pikepdf.readthedocs.io/en/latest/
@@ -136,7 +149,7 @@ class PDFParserModule(knbase.PreprocessingModule[PDFDocumentMeta]):
         page_index: int,
         input_dir: Path,
         output_dir: Path,
-      ) -> Generator[tuple[Path, Document[Any, Any]], None, None]:
+      ) -> Generator[tuple[Path, PDFPage | PDFAnnotation, bytes], None, None]:
 
     with pdfplumber.open(input_dir.joinpath(f"{page_index}{_PDF_EXT}")) as pdf:
       if len(pdf.pages) == 0:
@@ -144,24 +157,28 @@ class PDFParserModule(knbase.PreprocessingModule[PDFDocumentMeta]):
       page = pdf.pages[0]
       snapshot = extract_snapshot(page)
       file_path = output_dir.joinpath(f"{page_index}{_SNAPSHOT_EXT}")
-      yield file_path, save_document(
+      doc = save_document(
         file_path=file_path,
         content=snapshot,
-        meta=PDFPage(
-          kind="page",
-          page_index=page_index,
-        ),
+        meta=None,
       )
+      yield file_path, doc.hash, PDFPage(
+        kind="page",
+        page_index=page_index,
+        meta=doc.meta,
+      )
+
       for i, (content, meta) in enumerate(extract_annotations(page)):
         file_path = output_dir.joinpath(f"{page_index}-{i}{_ANNOTATION_EXT}")
-        yield file_path, save_document(
+        doc = save_document(
           file_path=file_path,
           content=content,
-          meta=PDFAnnotation(
-            kind="anno",
-            page_index=page_index,
-            anno=meta,
-          ),
+          meta=meta,
+        )
+        yield file_path, doc.hash, PDFAnnotation(
+          kind="anno",
+          page_index=page_index,
+          anno=doc.meta,
         )
 
   def _search_documents_files_and_meta(

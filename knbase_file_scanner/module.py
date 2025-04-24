@@ -1,6 +1,5 @@
 import os
 import knbase
-import mimetypes
 
 from os import PathLike
 from typing import Generator, TypedDict
@@ -11,6 +10,7 @@ from knbase import Updating, ResourceModule
 from .scanner import Scanner
 from .event_parser import Event, EventKind
 from .events import EventTarget
+from .mime import get_content_type
 
 
 class ResourceBaseMeta(TypedDict):
@@ -79,11 +79,7 @@ class FileScannerModule(ResourceModule[ResourceBaseMeta, None]):
     else:
       resource_hash = event.removed_hash or b""
 
-    resource_ext = resource_path.suffix
-    content_type, _ = mimetypes.guess_type(resource_ext)
-    if content_type is None:
-      content_type = "application/octet-stream"
-
+    content_type = get_content_type(resource_path)
     resource = Resource(
       id=event.path,
       hash=resource_hash,

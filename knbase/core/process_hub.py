@@ -45,8 +45,6 @@ class ProcessHub:
     finally:
       self._thread_pool.set_workers(0)
 
-    self._machine.goto_setting()
-
   def _handle_events_from_machine(self) -> bool:
     is_clear = True
 

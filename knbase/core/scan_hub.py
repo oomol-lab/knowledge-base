@@ -46,8 +46,6 @@ class ScanHub:
           except Exception:
             traceback.print_exc()
 
-    self._machine.goto_setting()
-
   def _handle_resource_events(self, bases_count: int):
     working_count: int = bases_count
     while working_count > 0:
