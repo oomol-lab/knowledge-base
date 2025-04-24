@@ -1,5 +1,4 @@
 from hashlib import sha256
-from base64 import urlsafe_b64encode
 
 
 def is_empty_string(text: str) -> bool:
@@ -14,4 +13,4 @@ def get_sha256(file_path) -> str:
   with open(file_path, "rb") as f:
     for chunk in iter(lambda: f.read(chunk_size), b""):
       hash.update(chunk)
-  return urlsafe_b64encode(hash.digest())
+  return hash.hexdigest()
