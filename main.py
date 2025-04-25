@@ -4,6 +4,7 @@ import shutil
 from knbase import KnowledgeBasesHub
 from knbase_file_scanner import FileScannerModule
 from knbase_pdf_parser import PDFParserModule
+from knbase_index import IndexDatabase
 
 
 def main() -> None:
@@ -13,12 +14,13 @@ def main() -> None:
 
   if os.path.exists(temp_path):
     shutil.rmtree(temp_path)
-    os.makedirs(temp_path)
+  os.makedirs(temp_path)
 
   file_scanner_module = FileScannerModule(
     db_path=os.path.join(temp_path, "file-scanner.sqlite3"),
   )
   pdf_parser_module = PDFParserModule()
+  index_db = IndexDatabase(base_path=temp_path)
   knbases_hub = KnowledgeBasesHub(
     db_path=os.path.join(temp_path, "main.sqlite3"),
     preprocess_path=os.path.join(temp_path, "preprocess"),
@@ -27,6 +29,7 @@ def main() -> None:
     modules=(
       file_scanner_module,
       pdf_parser_module,
+      *index_db.modules,
     ),
   )
   knbases_hub.create_knowledge_base(
@@ -38,6 +41,10 @@ def main() -> None:
       pdf_parser_module,
       None,
     )],
+    index_params=[
+      (module, None)
+      for module in index_db.modules
+    ],
   )
   knbases_hub.scan()
 

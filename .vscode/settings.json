@@ -5,13 +5,20 @@
   "cSpell.words": [
     "annot",
     "annots",
+    "chromadb",
     "descr",
+    "hnsw",
     "knbase",
     "knbases",
+    "langid",
     "lastrowid",
+    "metadatas",
+    "ndarray",
     "pdfplumber",
     "pikepdf",
     "preproc",
-    "pyyaml"
+    "pyyaml",
+    "spacy",
+    "venv"
   ],
 }

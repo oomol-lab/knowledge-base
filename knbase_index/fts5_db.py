@@ -2,16 +2,18 @@ import re
 import json
 
 from typing import Generator
+from pathlib import Path
 from sqlite3 import Cursor
+from knbase.sqlite3_pool import register_table_creators, SQLite3Pool
+
 from .types import IndexNode, IndexSegment, IndexNodeMatching
-from ..segmentation import Segment
-from ..sqlite3_pool import register_table_creators, SQLite3Pool
+from .segmentation import Segment
 
 _Segment = tuple[int, int, list[str]]
-_INVALID_TOKENS = set(["", "NEAR", "AND", "OR", "NOT"])
+_INVALID_TOKENS = ("", "NEAR", "AND", "OR", "NOT")
 
 class FTS5DB:
-  def __init__(self, db_path: str):
+  def __init__(self, db_path: Path):
     db = SQLite3Pool(
       format_name="fts5",
       path=db_path,
@@ -184,7 +186,7 @@ class FTS5DB:
 
     for token in text.split(" "):
       token = token.lower()
-      if not token in _INVALID_TOKENS:
+      if token not in _INVALID_TOKENS:
         tokens.append(token)
 
     return tokens
