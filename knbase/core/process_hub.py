@@ -53,7 +53,7 @@ class ProcessHub:
       if event is None:
         break
       self._thread_pool.execute(
-        func=lambda: self._handle_removed_resource_event(event),
+        func=lambda e=event: self._handle_removed_resource_event(e),
       )
       is_clear = False
 
@@ -62,14 +62,14 @@ class ProcessHub:
       if event is None:
         break
       self._thread_pool.execute(
-        func=lambda: self._handle_index_event(event),
+        func=lambda e=event: self._handle_index_event(e),
       )
       is_clear = False
 
     event = self._machine.pop_preproc_event()
     if event is not None:
       self._thread_pool.execute(
-        func=lambda: self._handle_preproc_event(event),
+        func=lambda e=event: self._handle_preproc_event(e),
       )
       is_clear = False
 
