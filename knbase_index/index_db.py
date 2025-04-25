@@ -8,8 +8,10 @@ from enum import Enum
 from typing import Generic, Callable
 from knbase import load_document, T, IndexModule
 
+from .types import IndexRow
 from .fts5_db import FTS5DB
 from .vector_db import VectorDB
+from .query import Query
 from .segmentation import Segment, Segmentation
 
 
@@ -37,6 +39,10 @@ class IndexDatabase(Generic[T]):
       distance_space="l2",
       index_dir_path=str(self._vector_path),
     )
+    self._query: Query = Query(
+      fts5_db=self._fts5_db,
+      vector_db=self._vector_db,
+    )
     self._modules: tuple[IndexModule[T], ...] = tuple(
       _VectorIndexModule(
         id=id,
@@ -53,6 +59,23 @@ class IndexDatabase(Generic[T]):
   @property
   def modules(self) -> tuple[IndexModule[T], ...]:
     return self._modules
+
+  def query(self, query: str, results_limit: int) -> list[IndexRow]:
+    rows: list[IndexRow] = []
+    for node in self._query.do(query, results_limit):
+      base_id, resource_hash = node.id.split("/", maxsplit=1)
+      base_id = int(base_id)
+      resource_hash = bytes.fromhex(resource_hash)
+      rows.append(IndexRow(
+        base_id=base_id,
+        resource_hash=resource_hash,
+        matching=node.matching,
+        metadata=node.metadata,
+        fts5_rank=node.fts5_rank,
+        vector_distance=node.vector_distance,
+        segments=node.segments,
+      ))
+    return rows
 
   def _add_document(self, kind: _ModuleKind, id: str, path: Path, meta: T):
     document = load_document(path)
@@ -122,4 +145,4 @@ class _VectorIndexModule(IndexModule[T]):
     self._remove_document(self._kind, id)
 
   def _to_id(self, base_id: int, document_hash: bytes) -> str:
-    return f"{base_id}-{document_hash.hex()}"
+    return f"{base_id}/{document_hash.hex()}"

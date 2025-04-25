@@ -8,6 +8,16 @@ class IndexNodeMatching(Enum):
   Similarity = "similarity"
 
 @dataclass
+class IndexRow:
+  base_id: int
+  resource_hash: bytes
+  matching: IndexNodeMatching
+  metadata: dict
+  fts5_rank: float
+  vector_distance: float
+  segments: list[IndexSegment]
+
+@dataclass
 class IndexNode:
   id: str
   type: str
@@ -24,11 +34,3 @@ class IndexSegment:
   fts5_rank: float
   vector_distance: float
   matched_tokens: list[str]
-
-@dataclass
-class PageRelativeToPDF:
-  pdf_hash: str
-  scope: str
-  path: str
-  device_path: str
-  page_index: int

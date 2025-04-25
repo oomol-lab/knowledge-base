@@ -47,6 +47,12 @@ def main() -> None:
     ],
   )
   knbases_hub.scan()
+  for row in index_db.query("一带一路", 5):
+    print(row.matching.name, row.metadata)
+    for segment in row.segments:
+      content = " ".join(segment.matched_tokens)
+      print(f"  [{segment.start}-{segment.end}] fts5={segment.fts5_rank} vector={segment.vector_distance}")
+      print("    ", content)
 
 if __name__ == "__main__":
   main()
