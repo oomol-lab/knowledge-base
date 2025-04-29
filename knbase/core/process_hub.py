@@ -5,7 +5,7 @@ from shutil import rmtree
 from .thread_pool import ThreadPool, ExecuteSuccess, ExecuteFail, NoMoreExecutions
 from .waker import WakerDidStop
 
-from ..interruption import InterruptedException
+from ..interruption import Interruption, InterruptedException
 from ..state_machine import (
   StateMachine,
   DocumentDescription,
@@ -20,12 +20,14 @@ class ProcessHub:
   def __init__(
         self,
         state_machine: StateMachine,
+        interruption: Interruption,
         preprocess_dir_path: Path,
       ) -> None:
 
     self._machine: StateMachine = state_machine
+    self._interruption: Interruption = interruption
     self._preprocess_dir_path: Path = preprocess_dir_path
-    self._thread_pool: ThreadPool[None | Callable[[], None]] = ThreadPool()
+    self._thread_pool: ThreadPool[None | Callable[[], None]] = ThreadPool(interruption)
 
   def start_loop(self, workers: int) -> None:
     assert workers > 0
@@ -36,7 +38,11 @@ class ProcessHub:
       is_clear1: bool = False
       is_clear2: bool = False
       while not is_clear1 or not is_clear2:
-        is_clear1 = self._handle_events_from_machine()
+        try:
+          is_clear1 = self._handle_events_from_machine()
+        except InterruptedException as e:
+          is_clear2 = self._handle_callback_events()
+          raise e
         is_clear2 = self._handle_callback_events()
 
     except WakerDidStop:
@@ -56,6 +62,7 @@ class ProcessHub:
         func=lambda e=event: self._handle_removed_resource_event(e),
       )
       is_clear = False
+      self._interruption.assert_continue()
 
     while True:
       event = self._machine.pop_handle_index_event()
@@ -65,6 +72,7 @@ class ProcessHub:
         func=lambda e=event: self._handle_index_event(e),
       )
       is_clear = False
+      self._interruption.assert_continue()
 
     event = self._machine.pop_preproc_event()
     if event is not None:
@@ -72,6 +80,7 @@ class ProcessHub:
         func=lambda e=event: self._handle_preproc_event(e),
       )
       is_clear = False
+      self._interruption.assert_continue()
 
     return is_clear
 

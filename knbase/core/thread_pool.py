@@ -5,6 +5,7 @@ from typing import Callable, TypeVar, Generic
 from threading import Thread, Lock, Event
 
 from ..sqlite3_pool import ThreadPoolContext
+from ..interruption import Interruption
 from .waker import Waker, WakerDidStop
 
 
@@ -62,7 +63,8 @@ class _Worker:
 
 # [thread safe]
 class ThreadPool(Generic[R]):
-  def __init__(self) -> None:
+  def __init__(self, interruption: Interruption) -> None:
+    self._interruption: Interruption = interruption
     self._lock: Lock = Lock()
     self._workers: list[_Worker] = []
     self._waker: Waker[None | Callable[[], None]] = Waker()
@@ -156,22 +158,23 @@ class ThreadPool(Generic[R]):
 
   def _run_in_background(self, worker: _Worker):
     with ThreadPoolContext():
-      func: None | Callable[[], None] = None
-      while True:
-        if worker.did_removed:
-          break
-        try:
-          func = self._waker.receive()
-        except WakerDidStop:
-          break
-        if func is None:
-          continue
-        try:
-          worker.is_working = True
-          result = func()
-          self._results_queue.complete_task(ExecuteSuccess(result=result))
-        except Exception as e:
-          traceback.print_exc()
-          self._results_queue.complete_task(ExecuteFail(error=e))
-        finally:
-          worker.is_working = False
+      with self._interruption.context():
+        func: None | Callable[[], None] = None
+        while True:
+          if worker.did_removed:
+            break
+          try:
+            func = self._waker.receive()
+          except WakerDidStop:
+            break
+          if func is None:
+            continue
+          try:
+            worker.is_working = True
+            result = func()
+            self._results_queue.complete_task(ExecuteSuccess(result=result))
+          except Exception as e:
+            traceback.print_exc()
+            self._results_queue.complete_task(ExecuteFail(error=e))
+          finally:
+            worker.is_working = False

@@ -18,6 +18,8 @@
     "pikepdf",
     "preproc",
     "pyyaml",
+    "signalnum",
+    "signum",
     "spacy",
     "venv"
   ],

@@ -1,5 +1,6 @@
 import os
 import shutil
+import signal
 
 from knbase import KnowledgeBasesHub
 from knbase_file_scanner import FileScannerModule
@@ -31,6 +32,10 @@ def main() -> None:
       pdf_parser_module,
       *index_db.modules,
     ),
+  )
+  signal.signal(
+    signalnum=signal.SIGINT,
+    handler=lambda _1, _2: knbases_hub.interrupt(),
   )
   knbases_hub.create_knowledge_base(
     resource_module=file_scanner_module,
