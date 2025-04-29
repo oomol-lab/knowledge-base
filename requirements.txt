@@ -1,5 +1,5 @@
 # knbase
-pyyaml==6.0.2
+PyYAML==6.0.2
 
 # knbase-pdf-parser
 pikepdf==9.2.1
@@ -11,3 +11,6 @@ spacy==3.8.2
 langid==1.1.6
 chromadb==0.5.20
 sentence-transformers==3.0.1
+
+# app
+flask==3.1.0
