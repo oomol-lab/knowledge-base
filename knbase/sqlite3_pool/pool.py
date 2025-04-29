@@ -26,7 +26,6 @@ class SQLite3Pool:
     conn: sqlite3.Connection | None = None
 
     if pool is not None:
-      # pylint: disable=E1101
       conn = pool.get(self._format_name)
 
     if conn is None:
@@ -40,7 +39,6 @@ class SQLite3Pool:
   def _send_back(self, conn: sqlite3.Connection) -> None:
     pool = get_thread_pool()
     if pool is not None:
-      # pylint: disable=E1101
       pool.send_back(self._format_name, conn)
     else:
       conn.close()

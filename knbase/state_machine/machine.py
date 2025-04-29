@@ -87,6 +87,10 @@ class StateMachine:
     self._preproc_tasks.sort(key=lambda x: (x.created_at, x.id))
     self._index_tasks.sort(key=lambda x: (x.created_at, x.id))
 
+  def get_knowledge_base(self, id: int) -> KnowledgeBase:
+    with self._db.connect() as (cursor, _):
+      return self._base_model.get_knowledge_base(cursor, id)
+
   def get_knowledge_bases(self) -> Generator[KnowledgeBase, None, None]:
     with self._db.connect() as (cursor, _):
       yield from self._base_model.get_knowledge_bases(cursor)
@@ -104,6 +108,23 @@ class StateMachine:
         )
         conn.commit()
         return base
+
+      except BaseException as e:
+        conn.rollback()
+        raise e
+
+  def remove_knowledge_base(self, base: KnowledgeBase) -> None:
+    assert self._state == StateMachineState.SETTING
+    with self._db.connect() as (cursor, conn):
+      try:
+        cursor.execute("BEGIN TRANSACTION")
+        if next()(
+          self._resource_model.list_resource_hashes(cursor, base),
+          None,
+        ) is not None:
+          raise ValueError(f"Cannot remove knowledge base {base.id} because it contains resources")
+        self._base_model.remove_knowledge_base(cursor, base)
+        conn.commit()
 
       except BaseException as e:
         conn.rollback()
@@ -200,6 +221,33 @@ class StateMachine:
             resource_content_type=resource.content_type,
           )
         conn.commit()
+
+      except BaseException as e:
+        conn.rollback()
+        raise e
+
+  def clean_resources(self, event_id: int, base: KnowledgeBase) -> None:
+    assert self._state == StateMachineState.SETTING
+    with self._db.connect() as (cursor, conn):
+      try:
+        cursor.execute("BEGIN TRANSACTION")
+        for resource_hash in self._resource_model.list_resource_hashes(cursor, base):
+          resource = next(self._resource_model.get_resources(
+            cursor=cursor,
+            knbase=base,
+            hash=resource_hash,
+          ))
+          self._submit_resource_hash_removed(
+            cursor=cursor,
+            event_id=event_id,
+            base=base,
+            resource_hash=resource_hash,
+            resource_content_type=resource.content_type,
+          )
+        self._resource_model.remove_resources(cursor, base)
+        conn.commit()
+        self._state = StateMachineState.PROCESSING
+        return base
 
       except BaseException as e:
         conn.rollback()

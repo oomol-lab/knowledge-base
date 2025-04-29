@@ -7,6 +7,7 @@ from .common import FRAMEWORK_DB
 from .module_context import ModuleContext
 from ..sqlite3_pool import register_table_creators
 from ..module import KnowledgeBase, Resource
+from ..utils import fetchmany
 
 
 class ResourceModel:
@@ -37,6 +38,14 @@ class ResourceModel:
       meta=json.loads(meta_text),
       updated_at=updated_at,
     )
+
+  def list_resource_hashes(self, cursor: Cursor, knbase: KnowledgeBase) -> Generator[bytes, None, None]:
+    cursor.execute(
+      "SELECT DISTINCT hash FROM resources WHERE knbase = ?",
+      (knbase.id,),
+    )
+    for row in fetchmany(cursor):
+      yield row[0]
 
   def count_resources(
         self,
@@ -124,6 +133,12 @@ class ResourceModel:
     cursor.execute(
       "DELETE FROM resources WHERE id = ? AND knbase = ?",
       (resource_id, knbase.id),
+    )
+
+  def remove_resources(self, cursor: Cursor, knbase: KnowledgeBase) -> None:
+    cursor.execute(
+      "DELETE FROM resources WHERE knbase = ?",
+      (knbase.id,),
     )
 
 def _create_tables(cursor: Cursor):

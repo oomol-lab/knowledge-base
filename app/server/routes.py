@@ -63,18 +63,12 @@ def routes(app: Flask, service: Service) -> None:
     service.start_scanning()
     return jsonify(None), 201
 
-  @app.route("/api/sources", methods=["GET"])
-  def get_sources():
-    return jsonify([
-      {
-        "name": name,
-        "path": path,
-      }
-      for name, path in service.sources.items()
-    ])
+  @app.route("/api/bases", methods=["GET"])
+  def get_bases():
+    return jsonify(service.bases())
 
-  @app.route("/api/sources", methods=["PUT"])
-  def put_sources():
+  @app.route("/api/bases", methods=["CREATE"])
+  def create_base():
     body = request.json
     if not isinstance(body, dict):
       raise ValueError("Invalid body")
@@ -82,23 +76,23 @@ def routes(app: Flask, service: Service) -> None:
     name = body.get("name", None)
     path = body.get("path", None)
 
-    if not isinstance(name, str):
+    if not isinstance(name, str) and name is not None:
       raise ValueError("Invalid name")
     if not isinstance(path, str):
       raise ValueError("Invalid path")
 
-    service.sources.put(name, path)
-    return jsonify({
-      "name": name,
-      "path": path,
-    })
+    return jsonify(service.create_base(
+      name=name,
+      path=path,
+    )), 201
 
-  @app.route("/api/sources", methods=["DELETE"])
-  def delete_sources():
-    name = request.args.get("name", "")
-    if name == "":
-      raise ValueError("Invalid name")
-    service.sources.remove(name)
+  @app.route("/api/bases/<id>", methods=["PUT"])
+  def put_base(id: int):
+    raise NotImplementedError("Not implemented yet")
+
+  @app.route("/api/bases/<id>", methods=["DELETE"])
+  def delete_base(id: int):
+    service.remove_base(id)
     return jsonify(None), 204
 
   @app.route("/files/<scope>/<path:path>", methods=["GET"])

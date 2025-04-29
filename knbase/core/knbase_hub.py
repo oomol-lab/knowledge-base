@@ -1,9 +1,9 @@
-from typing import Any, Iterable, Generator
+from typing import Iterable, Generator
 from os import PathLike
 from pathlib import Path
 
 from ..sqlite3_pool import ThreadPoolContext
-from ..module import T, R, Module, KnowledgeBase, ResourceModule, PreprocessingModule, IndexModule
+from ..module import T, R, Module, KnowledgeBase, ResourceModule
 from ..state_machine import StateMachine, StateMachineState
 from ..interruption import Interruption
 from .scan_hub import ScanHub
@@ -37,6 +37,9 @@ class KnowledgeBasesHub:
     self._scan_workers: int = scan_workers
     self._process_workers: int = process_workers
 
+  def interrupt(self) -> None:
+    self._interruption.interrupt()
+
   def scan(self) -> None:
     with ThreadPoolContext():
       if self._machine.state == StateMachineState.PROCESSING:
@@ -45,12 +48,13 @@ class KnowledgeBasesHub:
       self._process_hub.start_loop(self._process_workers)
       self._machine.goto_setting()
 
+  def get_knowledge_base(self, id: int) -> KnowledgeBase:
+    with ThreadPoolContext():
+      return self._machine.get_knowledge_base(id)
+
   def get_knowledge_bases(self) -> Generator[KnowledgeBase, None, None]:
     with ThreadPoolContext():
       yield from self._machine.get_knowledge_bases()
-
-  def interrupt(self) -> None:
-    self._interruption.interrupt()
 
   def create_knowledge_base(
         self,
@@ -58,6 +62,14 @@ class KnowledgeBasesHub:
         resource_param: T,
       ) -> KnowledgeBase[T, R]:
 
-    return self._machine.create_knowledge_base(
-      resource_param=(resource_module, resource_param),
-    )
+    with ThreadPoolContext():
+      return self._machine.create_knowledge_base(
+        resource_param=(resource_module, resource_param),
+      )
+
+  def remove_knowledge_base(self, knbase: KnowledgeBase) -> None:
+    with ThreadPoolContext():
+      self._machine.clean_resources(-1, knbase)
+      self._process_hub.start_loop(self._scan_workers)
+      self._machine.goto_setting()
+      self._machine.remove_knowledge_base(knbase)

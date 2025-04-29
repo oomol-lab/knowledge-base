@@ -14,6 +14,23 @@ class KnowledgeBaseModel:
   def __init__(self, modules_context: ModuleContext):
     self._ctx: ModuleContext = modules_context
 
+  def get_knowledge_base(self, cursor: Cursor, id: int) -> KnowledgeBase:
+    cursor.execute(
+      "SELECT res_module, res_params FROM knbases WHERE id = ?",
+      (id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+      raise ValueError(f"Knowledge base with id {id} not found")
+    resource_module_id = row[0]
+    resource_params = loads(row[1])
+    resource_module = self._ctx.module(resource_module_id)
+    return KnowledgeBase(
+      id=id,
+      resource_params=resource_params,
+      resource_module=resource_module,
+    )
+
   def get_knowledge_bases(self, cursor: Cursor) -> Generator[KnowledgeBase, None, None]:
     cursor.execute(
       "SELECT id, res_module, res_params FROM knbases"
@@ -47,6 +64,12 @@ class KnowledgeBaseModel:
       id=cursor.lastrowid,
       resource_module=resource_module,
       resource_params=resource_params,
+    )
+
+  def remove_knowledge_base(self, cursor: Cursor, knbase: KnowledgeBase):
+    cursor.execute(
+      "DELETE FROM knbases WHERE id = ?",
+      (knbase.id,),
     )
 
   def update_resource_params(

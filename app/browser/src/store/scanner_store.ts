@@ -22,9 +22,9 @@ export class ScannerStore {
   readonly #addedSourcePath$: Val<string>;
   readonly #isSubmittingAddition$: Val<boolean>;
 
-  private constructor(sources: { name: string, path: string }[]) {
+  private constructor(sources: { id: number, name: string, path: string }[]) {
     this.#scanningStore = new ScanningStore();
-    this.#sources$ = val(sources.map(({ name, path }) => new SourceStore(name, path, this.#onRemoveSource)));
+    this.#sources$ = val(sources.map(({ id, name, path }) => new SourceStore(id, name, path, this.#onRemoveSource)));
     this.#addedSourceName$ = val("");
     this.#addedSourcePath$ = val("");
     this.#isSubmittingAddition$ = val(false);
@@ -63,7 +63,7 @@ export class ScannerStore {
   }
 
   public static async load(): Promise<ScannerStore> {
-    const sources = await fetchJson<{ name: string, path: string }[]>("/api/sources");
+    const sources = await fetchJson<{ id: number, name: string, path: string }[]>("/api/bases");
     return new ScannerStore(sources);
   }
 
@@ -75,15 +75,15 @@ export class ScannerStore {
     const name = standardize(this.#addedSourceName$.value);
     const path = standardize(this.#addedSourcePath$.value);
     this.#isSubmittingAddition$.set(true);
-    fetchJson("/api/sources", {
-      method: "PUT",
+    fetchJson<{ id: number }>("/api/bases", {
+      method: "CREATE",
       body: JSON.stringify({ name, path }),
-    }).then(() => {
+    }).then(({ id }) => {
       this.#addedSourceName$.set("");
       this.#addedSourcePath$.set("");
       this.#sources$.set([
         ...this.#sources$.value,
-        new SourceStore(name, path, this.#onRemoveSource),
+        new SourceStore(id, name, path, this.#onRemoveSource),
       ]);
     }).catch((error) => {
       message.error(error.message);
@@ -101,6 +101,7 @@ export type SourceStore$ = {
 };
 
 export class SourceStore {
+  public readonly id: number
   public readonly name: string;
   public readonly $: SourceStore$;
 
@@ -109,7 +110,8 @@ export class SourceStore {
   readonly #isSubmitting$: Val<boolean>;
   readonly #onRemoved: (name: string) => void
 
-  public constructor(name: string, path: string, onRemoved: (name: string) => void) {
+  public constructor(id: number, name: string, path: string, onRemoved: (name: string) => void) {
+    this.id = id;
     this.name = name;
     this.#path$ = val(path);
     this.#remotePath$ = val(path);
@@ -137,7 +139,7 @@ export class SourceStore {
   public submitPath(): void {
     this.#isSubmitting$.set(true);
     const path = standardize(this.#path$.value);
-    fetchJson("/api/sources", {
+    fetchJson(`/api/bases/${this.id}`, {
       method: "PUT",
       body: JSON.stringify({
         name: this.name,
@@ -154,12 +156,9 @@ export class SourceStore {
   }
 
   public remove(): void {
-    const query = new URLSearchParams({
-      name: this.name,
-    });
     this.#isSubmitting$.set(true);
     fetchJson(
-      `/api/sources?${query}`,
+      `/api/bases/${this.id}`,
       {method: "DELETE"},
     ).then(() => {
       this.#onRemoved(this.name);
