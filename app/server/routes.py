@@ -1,7 +1,6 @@
 import os
 
-from sqlite3_pool import build_thread_pool, release_thread_pool
-from .service import ServiceRef
+from knbase.sqlite3_pool import enter_thread_pool, exit_thread_pool
 from flask import (
   request,
   jsonify,
@@ -11,7 +10,9 @@ from flask import (
   Response,
 )
 
-def routes(app: Flask, service: ServiceRef):
+from .service import Service
+
+def routes(app: Flask, service: Service) -> None:
 
   @app.route("/static/<file_name>")
   def get_static_file(file_name: str):
@@ -113,15 +114,15 @@ def routes(app: Flask, service: ServiceRef):
 
   @app.before_request
   def before_request():
-    build_thread_pool()
+    enter_thread_pool()
 
   @app.teardown_request
   def teardown_request(response):
-    release_thread_pool()
+    exit_thread_pool()
     return response
 
   @app.errorhandler(404)
-  def page_not_found(e):
+  def page_not_found(_):
     mimetypes = request.accept_mimetypes
     if mimetypes.accept_json and not mimetypes.accept_html:
       return jsonify({ "error": "Not found" }), 404

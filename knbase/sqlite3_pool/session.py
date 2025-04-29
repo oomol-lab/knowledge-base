@@ -8,11 +8,20 @@ from typing import cast, Callable
 _THREAD_POOL = threading.local()
 _MAX_STACK_SIZE = 2
 
+def enter_thread_pool() -> None:
+  if hasattr(_THREAD_POOL, "value"):
+    raise RuntimeError("Thread pool already exists")
+  setattr(_THREAD_POOL, "value", ThreadPool())
+
+def exit_thread_pool() -> None:
+  if hasattr(_THREAD_POOL, "value"):
+    cast(ThreadPool, getattr(_THREAD_POOL, "value")).release()
+    delattr(_THREAD_POOL, "value")
+
 def get_thread_pool() -> ThreadPool | None:
   if hasattr(_THREAD_POOL, "value"):
     return getattr(_THREAD_POOL, "value")
   return None
-
 
 class SQLite3ConnectionSession:
   def __init__(self, conn: sqlite3.Connection, send_back: Callable[[sqlite3.Connection], None]):
@@ -76,12 +85,8 @@ class ThreadPool():
 
 class ThreadPoolContext:
   def __enter__(self) -> None:
-    if hasattr(_THREAD_POOL, "value"):
-      raise RuntimeError("Thread pool already exists")
-    setattr(_THREAD_POOL, "value", ThreadPool())
+    enter_thread_pool()
     return None
 
   def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-    if hasattr(_THREAD_POOL, "value"):
-      cast(ThreadPool, getattr(_THREAD_POOL, "value")).release()
-      delattr(_THREAD_POOL, "value")
+    exit_thread_pool()
