@@ -5,6 +5,7 @@ from os import PathLike
 from typing import Generator, TypedDict
 from pathlib import Path
 from hashlib import sha256
+from collections.abc import Iterable
 from knbase import Updating, ResourceModule, PreprocessingModule, IndexModule
 
 from .scanner import Scanner
@@ -27,7 +28,7 @@ class FileScannerModule(ResourceModule[ResourceBaseMeta, None]):
   def __init__(
         self,
         db_path: PathLike,
-        preprocess_modules_map: dict[str, PreprocessingModule | list[PreprocessingModule]],
+        preprocess_modules_map: dict[str, PreprocessingModule | Iterable[PreprocessingModule]],
         index_modules: list[IndexModule],
       ) -> None:
 
@@ -40,8 +41,8 @@ class FileScannerModule(ResourceModule[ResourceBaseMeta, None]):
     for k, v in preprocess_modules_map.items():
       if isinstance(v, PreprocessingModule):
         self._preprocess_modules_map[k] = [v]
-      elif isinstance(v, list):
-        self._preprocess_modules_map[k] = v
+      elif isinstance(v, Iterable):
+        self._preprocess_modules_map[k] = list(v)
       else:
         raise TypeError(f"Invalid type for preprocess module: {type(v)}")
 
