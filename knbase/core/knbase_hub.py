@@ -2,7 +2,7 @@ from typing import Any, Iterable, Generator
 from os import PathLike
 from pathlib import Path
 
-from ..sqlite3_pool import build_thread_pool, release_thread_pool
+from ..sqlite3_pool import ThreadPoolContext
 from ..module import T, R, Module, KnowledgeBase, ResourceModule, PreprocessingModule, IndexModule
 from ..state_machine import StateMachine, StateMachineState
 from .scan_hub import ScanHub
@@ -34,15 +34,12 @@ class KnowledgeBasesHub:
     self._process_workers: int = process_workers
 
   def scan(self) -> None:
-    build_thread_pool()
-    try:
+    with ThreadPoolContext():
       if self._machine.state == StateMachineState.PROCESSING:
         self._process_hub.start_loop(self._scan_workers)
       self._scan_hub.start_loop(self._scan_workers)
       self._process_hub.start_loop(self._process_workers)
       self._machine.goto_setting()
-    finally:
-      release_thread_pool()
 
   def get_knowledge_bases(self) -> Generator[KnowledgeBase, None, None]:
     yield from self._machine.get_knowledge_bases()

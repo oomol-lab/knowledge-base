@@ -2,20 +2,11 @@ from __future__ import annotations
 import sqlite3
 import threading
 
-from typing import Callable
+from typing import cast, Callable
 
 
 _THREAD_POOL = threading.local()
 _MAX_STACK_SIZE = 2
-
-def build_thread_pool():
-  if not hasattr(_THREAD_POOL, "value"):
-    setattr(_THREAD_POOL, "value", ThreadPool())
-
-def release_thread_pool():
-  if hasattr(_THREAD_POOL, "value"):
-    # pylint: disable=E1101
-    getattr(_THREAD_POOL, "value").release()
 
 def get_thread_pool() -> ThreadPool | None:
   if hasattr(_THREAD_POOL, "value"):
@@ -82,3 +73,15 @@ class ThreadPool():
       stack = []
       self._stacks[format_name] = stack
     return stack
+
+class ThreadPoolContext:
+  def __enter__(self) -> None:
+    if hasattr(_THREAD_POOL, "value"):
+      raise RuntimeError("Thread pool already exists")
+    setattr(_THREAD_POOL, "value", ThreadPool())
+    return None
+
+  def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    if hasattr(_THREAD_POOL, "value"):
+      cast(ThreadPool, getattr(_THREAD_POOL, "value")).release()
+      delattr(_THREAD_POOL, "value")

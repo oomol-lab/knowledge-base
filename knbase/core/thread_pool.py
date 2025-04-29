@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Callable, TypeVar, Generic
 from threading import Thread, Lock, Event
 
-from ..sqlite3_pool import build_thread_pool, release_thread_pool
+from ..sqlite3_pool import ThreadPoolContext
 from .waker import Waker, WakerDidStop
 
 
@@ -155,9 +155,8 @@ class ThreadPool(Generic[R]):
     return self._results_queue.pop_result()
 
   def _run_in_background(self, worker: _Worker):
-    func: None | Callable[[], None] = None
-    build_thread_pool()
-    try:
+    with ThreadPoolContext():
+      func: None | Callable[[], None] = None
       while True:
         if worker.did_removed:
           break
@@ -176,5 +175,3 @@ class ThreadPool(Generic[R]):
           self._results_queue.complete_task(ExecuteFail(error=e))
         finally:
           worker.is_working = False
-    finally:
-      release_thread_pool()
