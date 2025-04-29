@@ -16,10 +16,16 @@ class TestStateMachineLogic(unittest.TestCase):
 
   def test_preprocess_all_in_once(self):
     db_path = ensure_db_file_not_exist("state-machine.sqlite3")
+    preproc_module = MyPreprocessingModule()
+    index_module = MyIndexModule()
+    resource_module = MyResourceModule((
+      preproc_module,
+      index_module,
+    ))
     modules = (
-      MyResourceModule(),
-      MyPreprocessingModule(),
-      MyIndexModule(),
+      resource_module,
+      preproc_module,
+      index_module,
     )
     machine = StateMachine(db_path, modules)
 
@@ -30,8 +36,6 @@ class TestStateMachineLogic(unittest.TestCase):
     )
     base = machine.create_knowledge_base(
       resource_param=(modules[0], None),
-      preproc_params=((modules[1], None),),
-      index_params=((modules[2], None),),
     )
     self.assertListEqual(
       list1=[b.id for b in machine.get_knowledge_bases()],

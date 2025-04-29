@@ -5,7 +5,7 @@ from os import PathLike
 from typing import Generator, TypedDict
 from pathlib import Path
 from hashlib import sha256
-from knbase import Updating, ResourceModule
+from knbase import Updating, ResourceModule, PreprocessingModule, IndexModule
 
 from .scanner import Scanner
 from .event_parser import Event, EventKind
@@ -24,10 +24,26 @@ KnowledgeBase = knbase.KnowledgeBase[ResourceBaseMeta, None]
 _SendedEventDict = dict[int, tuple[Event, ResourceEvent, bytes]]
 
 class FileScannerModule(ResourceModule[ResourceBaseMeta, None]):
-  def __init__(self, db_path: PathLike) -> None:
+  def __init__(
+        self,
+        db_path: PathLike,
+        preprocess_modules_map: dict[str, PreprocessingModule | list[PreprocessingModule]],
+        index_modules: list[IndexModule],
+      ) -> None:
+
     super().__init__("file-scanner")
     self._scanner = Scanner(Path(db_path))
+    self._index_modules: list[IndexModule] = list(index_modules)
+    self._preprocess_modules_map: dict[str, list[PreprocessingModule]] = {}
     self._base_sended_events: dict[int, _SendedEventDict] = {}
+
+    for k, v in preprocess_modules_map.items():
+      if isinstance(v, PreprocessingModule):
+        self._preprocess_modules_map[k] = [v]
+      elif isinstance(v, list):
+        self._preprocess_modules_map[k] = v
+      else:
+        raise TypeError(f"Invalid type for preprocess module: {type(v)}")
 
   def scan(self, base: KnowledgeBase) -> Generator[ResourceEvent, None, None]:
     base_path = base.resource_params["path"]
@@ -62,6 +78,17 @@ class FileScannerModule(ResourceModule[ResourceBaseMeta, None]):
     if sended_events is not None:
       for e, _, hash in sended_events.values():
         e.close(hash)
+
+  def preprocess_module_ids(self, base: KnowledgeBase, content_type: str) -> list[str]:
+    preprocess_modules = self._preprocess_modules_map.get(content_type, None)
+    if preprocess_modules is None:
+      preprocess_modules = self._preprocess_modules_map.get("*", None)
+      if preprocess_modules is None:
+        return []
+    return [module.id for module in preprocess_modules]
+
+  def index_module_ids(self, base: KnowledgeBase) -> list[str]:
+    return [module.id for module in self._index_modules]
 
   def _sended_events(self, base_id: int) -> _SendedEventDict:
     sended_events = self._base_sended_events.get(base_id, None)

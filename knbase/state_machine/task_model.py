@@ -21,11 +21,16 @@ class PreprocessingTask:
   preproc_module: PreprocessingModule
   base: KnowledgeBase
   resource_hash: bytes
-  from_resource_hash: bytes | None
+  from_resource: FromResource | None
   event_id: int
   path: Path
   content_type: str
   created_at: int
+
+@dataclass
+class FromResource:
+  hash: bytes
+  content_type: str
 
 @dataclass
 class IndexTask:
@@ -53,7 +58,7 @@ class TaskModel:
       ) -> PreprocessingTask | None:
     cursor.execute(
       """
-      SELECT id, preproc_module, res_hash, from_res_hash, event, path, content_type, created_at
+      SELECT id, preproc_module, res_hash, from_res_hash, from_res_content_type, event, path, content_type, created_at
       FROM preproc_tasks WHERE knbase = ? AND id = ?
       """,
       (base.id, task_id),
@@ -62,13 +67,29 @@ class TaskModel:
     if row is None:
       return None
 
-    task_id, preproc_module_id, resource_hash, from_resource_hash, event_id, path, content_type, created_at = row
+    from_resource: FromResource | None = None
+    (
+      task_id,
+      preproc_module_id,
+      resource_hash,
+      from_res_hash,
+      from_res_content_type,
+      event_id,
+      path,
+      content_type,
+      created_at,
+    ) = row
+    if from_res_hash is not None and from_res_content_type:
+      from_resource = FromResource(
+        hash=from_res_hash,
+        content_type=from_res_content_type,
+      )
     return PreprocessingTask(
       id=task_id,
       preproc_module=self._ctx.module(preproc_module_id),
       base=base,
       resource_hash=resource_hash,
-      from_resource_hash=from_resource_hash,
+      from_resource=from_resource,
       event_id=event_id,
       path=Path(path),
       content_type=content_type,
@@ -113,7 +134,7 @@ class TaskModel:
     if resource_hash is None:
       cursor.execute(
         """
-        SELECT id, preproc_module, res_hash, from_res_hash, event, path, content_type, created_at
+        SELECT id, preproc_module, res_hash, from_res_hash, from_res_content_type, event, path, content_type, created_at
         FROM preproc_tasks WHERE knbase = ?
         ORDER BY created_at, id DESC
         """,
@@ -122,7 +143,7 @@ class TaskModel:
     else:
       cursor.execute(
         """
-        SELECT id, preproc_module, res_hash, from_res_hash, event, path, content_type, created_at
+        SELECT id, preproc_module, res_hash, from_res_hash, from_res_content_type, event, path, content_type, created_at
         FROM preproc_tasks WHERE knbase = ? AND res_hash = ?
         ORDER BY created_at, id DESC
         """,
@@ -130,14 +151,29 @@ class TaskModel:
       )
 
     for row in fetchmany(cursor):
-      task_id, preproc_module_id, resource_hash, from_resource_hash, event_id, path, content_type, created_at = row
-      preproc_module = self._ctx.module(preproc_module_id)
+      from_resource: FromResource | None = None
+      (
+        task_id,
+        preproc_module_id,
+        resource_hash,
+        from_res_hash,
+        from_res_content_type,
+        event_id,
+        path,
+        content_type,
+        created_at,
+      ) = row
+      if from_res_hash is not None and from_res_content_type:
+        from_resource = FromResource(
+          hash=from_res_hash,
+          content_type=from_res_content_type,
+        )
       yield PreprocessingTask(
         id=task_id,
-        preproc_module=preproc_module,
+        preproc_module=self._ctx.module(preproc_module_id),
         base=base,
         resource_hash=resource_hash,
-        from_resource_hash=from_resource_hash,
+        from_resource=from_resource,
         event_id=event_id,
         path=Path(path),
         content_type=content_type,
@@ -202,7 +238,7 @@ class TaskModel:
         preproc_module: PreprocessingModule,
         base: KnowledgeBase,
         resource_hash: bytes,
-        from_resource_hash: bytes | None,
+        from_resource: FromResource | None,
         path: Path,
         content_type: str,
       ) -> PreprocessingTask:
@@ -210,14 +246,17 @@ class TaskModel:
     created_at = int(time() * 1000)
     cursor.execute(
       """
-      INSERT INTO preproc_tasks (preproc_module, knbase, res_hash, from_res_hash, event, path, content_type, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO preproc_tasks (
+        preproc_module, knbase, res_hash, from_res_hash, from_res_content_type,
+        event, path, content_type, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       """,
       (
         self._ctx.module_id(preproc_module),
         base.id,
         resource_hash,
-        from_resource_hash,
+        from_resource.hash if from_resource else None,
+        from_resource.content_type if from_resource else None,
         event_id,
         str(path),
         content_type,
@@ -229,7 +268,7 @@ class TaskModel:
       preproc_module=preproc_module,
       base=base,
       resource_hash=resource_hash,
-      from_resource_hash=from_resource_hash,
+      from_resource=from_resource,
       event_id=event_id,
       path=path,
       content_type=content_type,
@@ -324,6 +363,7 @@ def _create_tables(cursor: Cursor):
       knbase INTEGER,
       res_hash BLOB NOT NULL,
       from_res_hash BLOB NULL,
+      from_res_content_type TEXT NULL,
       event INTEGER NOT NULL,
       path TEXT NOT NULL,
       content_type TEXT NOT NULL,

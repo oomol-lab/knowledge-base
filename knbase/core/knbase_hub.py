@@ -56,12 +56,8 @@ class KnowledgeBasesHub:
         self,
         resource_module: ResourceModule[T, R],
         resource_param: T,
-        preproc_params: Iterable[tuple[PreprocessingModule, Any]] = (),
-        index_params: Iterable[tuple[IndexModule, Any]] = (),
       ) -> KnowledgeBase[T, R]:
 
     return self._machine.create_knowledge_base(
       resource_param=(resource_module, resource_param),
-      preproc_params=preproc_params,
-      index_params=index_params,
     )

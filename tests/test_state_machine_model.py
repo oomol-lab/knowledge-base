@@ -10,7 +10,7 @@ from knbase.state_machine.knowledge_base_model import KnowledgeBaseModel
 from knbase.state_machine.module_context import ModuleContext
 from knbase.state_machine.resource_model import ResourceModel
 from knbase.state_machine.document_model import DocumentModel
-from knbase.state_machine.task_model import IndexTaskOperation, TaskModel
+from knbase.state_machine.task_model import FromResource, IndexTaskOperation, TaskModel
 from knbase.module import Resource, KnowledgeBase
 
 
@@ -26,7 +26,6 @@ class TestStateMachineModel(unittest.TestCase):
         cursor=cursor,
         resource_module=resource_module,
         resource_params=None,
-        records=[],
       )
       conn.commit()
 
@@ -209,7 +208,6 @@ class TestStateMachineModel(unittest.TestCase):
         cursor=cursor,
         resource_module=resource_module,
         resource_params=None,
-        records=[],
       )
       conn.commit()
 
@@ -340,7 +338,6 @@ class TestStateMachineModel(unittest.TestCase):
         cursor=cursor,
         resource_module=resource_module,
         resource_params=None,
-        records=[],
       )
       conn.commit()
 
@@ -351,7 +348,7 @@ class TestStateMachineModel(unittest.TestCase):
         preproc_module=preproc_module,
         base=knbase,
         resource_hash=b"HASH1",
-        from_resource_hash=None,
+        from_resource=None,
         path=Path("/path/to/file1"),
         content_type="text/plain",
       )
@@ -361,9 +358,12 @@ class TestStateMachineModel(unittest.TestCase):
         preproc_module=preproc_module,
         base=knbase,
         resource_hash=b"HASH2",
-        from_resource_hash=b"HASH1",
         path=Path("/path/to/file1"),
         content_type="text/plain",
+        from_resource=FromResource(
+          hash=b"HASH1",
+          content_type="text/plain",
+        ),
       )
       conn.commit()
 
@@ -415,7 +415,6 @@ class TestStateMachineModel(unittest.TestCase):
         cursor=cursor,
         resource_module=resource_module,
         resource_params=None,
-        records=[],
       )
       conn.commit()
 
@@ -492,9 +491,12 @@ class TestStateMachineModel(unittest.TestCase):
 def _create_variables(file_name: str):
   db_path = ensure_db_file_not_exist(file_name)
   db = SQLite3Pool(FRAMEWORK_DB, db_path)
-  resource_module = MyResourceModule()
   preproc_module = MyPreprocessingModule()
   index_module = MyIndexModule()
+  resource_module = MyResourceModule((
+    preproc_module,
+    index_module,
+  ))
   modules = (
     resource_module,
     preproc_module,

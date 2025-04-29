@@ -1,4 +1,4 @@
-from typing import Any, Generator
+from typing import Any, Generator, Iterable
 from pathlib import Path
 
 from knbase.module import (
@@ -12,8 +12,17 @@ from knbase.module import (
 
 
 class MyResourceModule(ResourceModule[Any, Any]):
-  def __init__(self):
+  def __init__(self, modules: Iterable[PreprocessingModule[Any] | IndexModule[Any]]):
     super().__init__("my_res")
+    self._preprocess_modules: list[PreprocessingModule[Any]] = []
+    self._index_modules: list[IndexModule[Any]] = []
+    for module in modules:
+      if isinstance(module, PreprocessingModule):
+        self._preprocess_modules.append(module)
+      elif isinstance(module, IndexModule):
+        self._index_modules.append(module)
+      else:
+        raise TypeError(f"Unknown module type: {type(module)}")
 
   def scan(self, base: KnowledgeBase[Any, Any]) -> Generator[ResourceEvent[Any, Any], None, None]:
     raise NotImplementedError()
@@ -23,6 +32,12 @@ class MyResourceModule(ResourceModule[Any, Any]):
 
   def complete_scanning(self, base: KnowledgeBase[None, None]) -> None:
     raise NotImplementedError()
+
+  def preprocess_module_ids(self, base: KnowledgeBase[Any, Any], content_type: str) -> list[str]:
+    return [module.id for module in self._preprocess_modules]
+
+  def index_module_ids(self, base: KnowledgeBase[Any, Any]) -> list[str]:
+    return [module.id for module in self._index_modules]
 
 class MyPreprocessingModule(PreprocessingModule[Any]):
   def __init__(self):

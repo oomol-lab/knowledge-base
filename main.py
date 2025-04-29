@@ -17,11 +17,13 @@ def main() -> None:
     shutil.rmtree(temp_path)
   os.makedirs(temp_path)
 
-  file_scanner_module = FileScannerModule(
-    db_path=os.path.join(temp_path, "file-scanner.sqlite3"),
-  )
   pdf_parser_module = PDFParserModule()
   index_db = IndexDatabase(base_path=temp_path)
+  file_scanner_module = FileScannerModule(
+    db_path=os.path.join(temp_path, "file-scanner.sqlite3"),
+    preprocess_modules_map={"*": pdf_parser_module},
+    index_modules=[*index_db.modules],
+  )
   knbases_hub = KnowledgeBasesHub(
     db_path=os.path.join(temp_path, "main.sqlite3"),
     preprocess_path=os.path.join(temp_path, "preprocess"),
@@ -42,14 +44,6 @@ def main() -> None:
     resource_param={
       "path": knbase_path,
     },
-    preproc_params=[(
-      pdf_parser_module,
-      None,
-    )],
-    index_params=[
-      (module, None)
-      for module in index_db.modules
-    ],
   )
   knbases_hub.scan()
   for row in index_db.query("一带一路", 5):

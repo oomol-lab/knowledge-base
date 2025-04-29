@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from os import PathLike
-from typing import Any, Generator, TypeVar, Generic
+from typing import Generator, TypeVar, Generic
 from dataclasses import dataclass
 from abc import abstractmethod, ABC
 from enum import Enum
@@ -26,33 +26,10 @@ class Module(ABC):
     return self._id
 
 @dataclass
-class ProcessRecord(Generic[T]):
-  id: int
-  module: PreprocessingModule | IndexModule
-  params: T
-
-@dataclass
 class KnowledgeBase(Generic[T, R]):
   id: int
   resource_params: T
   resource_module: ResourceModule[T, R]
-  process_records: list[ProcessRecord[Any]]
-
-  @property
-  def preproc_modules(self) -> list[PreprocessingModule]:
-    return [
-      record.module
-      for record in self.process_records
-      if isinstance(record.module, PreprocessingModule)
-    ]
-
-  @property
-  def index_modules(self) -> list[IndexModule]:
-    return [
-      record.module
-      for record in self.process_records
-      if isinstance(record.module, IndexModule)
-    ]
 
 @dataclass
 class Resource(Generic[T, R]):
@@ -81,6 +58,14 @@ class ResourceModule(Module, Generic[T, R]):
 
   @abstractmethod
   def complete_scanning(self, base: KnowledgeBase[T, R]) -> None:
+    raise NotImplementedError()
+
+  @abstractmethod
+  def preprocess_module_ids(self, base: KnowledgeBase[T, R], content_type: str) -> list[str]:
+    raise NotImplementedError()
+
+  @abstractmethod
+  def index_module_ids(self, base: KnowledgeBase[T, R]) -> list[str]:
     raise NotImplementedError()
 
 @dataclass
