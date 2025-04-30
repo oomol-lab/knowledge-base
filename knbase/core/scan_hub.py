@@ -7,6 +7,7 @@ from concurrent.futures import as_completed, Future, ThreadPoolExecutor
 
 from ..sqlite3_pool import ThreadPoolContext
 from ..module import KnowledgeBase, ResourceEvent
+from ..reporter import EventReporter
 from ..state_machine import StateMachine
 from ..interruption import Interruption
 from .waker import Waker, WakerDidStop
@@ -22,9 +23,16 @@ class _AllTasksDone:
   pass
 
 class ScanHub:
-  def __init__(self, state_machine: StateMachine, interruption: Interruption):
+  def __init__(
+        self,
+        state_machine: StateMachine,
+        interruption: Interruption,
+        reporter: EventReporter,
+      ) -> None:
+
     self._machine: StateMachine = state_machine
     self._interruption: Interruption = interruption
+    self._reporter: EventReporter = reporter
     self._waker: Waker[_Task | _AllTasksDone] = Waker()
 
   def start_loop(self, workers: int) -> None:
@@ -73,8 +81,11 @@ class ScanHub:
     with ThreadPoolContext():
       with self._interruption.context():
         module = base.resource_module
+        event_id = self._reporter.report_scan_begin(base)
+        error: Exception | None = None
         try:
           for event in module.scan(base):
+            self._reporter.report_resource_event(event)
             task = _Task(
               event=event,
               done=Event(),
@@ -86,6 +97,11 @@ class ScanHub:
               break
             module.complete_event(event)
 
+        except Exception as e:
+          error = e
+          raise e
+
         finally:
           self._waker.push(_AllTasksDone())
           module.complete_scanning(base)
+          self._reporter.report_scan_done(event_id, base, error)

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from os import PathLike
-from typing import Generator, TypeVar, Generic
+from typing import Generator, TypeVar, Generic, Callable
 from dataclasses import dataclass
-from abc import abstractmethod, ABC
 from enum import Enum
+from abc import abstractmethod, ABC
 from pathlib import Path
 
 
@@ -95,6 +95,7 @@ class PreprocessingModule(Module, Generic[T]):
         resource_hash: bytes,
         resource_path: Path,
         resource_content_type: str,
+        report_progress: Callable[[float], None],
       ) -> list[PreprocessingResult[T]]:
     raise NotImplementedError()
 
@@ -106,6 +107,7 @@ class IndexModule(Module, Generic[T]):
         document_hash: bytes,
         document_path: Path,
         document_meta: T,
+        report_progress: Callable[[float], None],
       ) -> None:
     raise NotImplementedError()
 
@@ -114,5 +116,6 @@ class IndexModule(Module, Generic[T]):
         self,
         base_id: int,
         document_hash: bytes,
+        report_progress: Callable[[float], None],
       ) -> None:
     raise NotImplementedError()

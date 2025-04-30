@@ -8,13 +8,16 @@ from typing import cast, Callable
 _THREAD_POOL = threading.local()
 _MAX_STACK_SIZE = 2
 
+def did_enter_thread_pool() -> bool:
+  return hasattr(_THREAD_POOL, "value")
+
 def enter_thread_pool() -> None:
-  if hasattr(_THREAD_POOL, "value"):
+  if did_enter_thread_pool():
     raise RuntimeError("Thread pool already exists")
   setattr(_THREAD_POOL, "value", ThreadPool())
 
 def exit_thread_pool() -> None:
-  if hasattr(_THREAD_POOL, "value"):
+  if did_enter_thread_pool():
     cast(ThreadPool, getattr(_THREAD_POOL, "value")).release()
     delattr(_THREAD_POOL, "value")
 
@@ -84,9 +87,14 @@ class ThreadPool():
     return stack
 
 class ThreadPoolContext:
+  def __init__(self):
+    self._work: bool = not did_enter_thread_pool()
+
   def __enter__(self) -> None:
-    enter_thread_pool()
+    if self._work:
+      enter_thread_pool()
     return None
 
   def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-    exit_thread_pool()
+    if self._work:
+      exit_thread_pool()

@@ -5,6 +5,7 @@ from shutil import rmtree
 from .thread_pool import ThreadPool, ExecuteSuccess, ExecuteFail, NoMoreExecutions
 from .waker import WakerDidStop
 
+from ..reporter import EventReporter
 from ..interruption import Interruption, InterruptedException
 from ..state_machine import (
   StateMachine,
@@ -22,11 +23,13 @@ class ProcessHub:
         state_machine: StateMachine,
         interruption: Interruption,
         preprocess_dir_path: Path,
+        reporter: EventReporter,
       ) -> None:
 
     self._machine: StateMachine = state_machine
     self._interruption: Interruption = interruption
     self._preprocess_dir_path: Path = preprocess_dir_path
+    self._reporter: EventReporter = reporter
     self._thread_pool: ThreadPool[None | Callable[[], None]] = ThreadPool(interruption)
 
   def start_loop(self, workers: int) -> None:
@@ -114,6 +117,17 @@ class ProcessHub:
 
   # running in background thread
   def _handle_preproc_event(self, event: PreprocessingEvent) -> None | Callable[[], None]:
+    if not event.module.acceptant(
+      base_id=event.base.id,
+      resource_hash=event.resource_hash,
+      resource_path=event.resource_path,
+      resource_content_type=event.resource_content_type,
+    ):
+      return None
+
+    documents: list[DocumentDescription] = []
+    event_id: int
+    error: Exception | None = None
     latest_cache_path: Path | None = None
     workspace_path = self._preprocess_dir_path.joinpath(
       str(event.base.id),
@@ -131,43 +145,51 @@ class ProcessHub:
       if not latest_cache_path.exists():
         latest_cache_path = None
 
-    documents: list[DocumentDescription] = []
     try:
-      if event.module.acceptant(
+      event_id = self._reporter.report_preproc_begin(event)
+      results = event.module.preprocess(
+        workspace_path=workspace_path,
+        latest_cache_path=latest_cache_path,
         base_id=event.base.id,
         resource_hash=event.resource_hash,
         resource_path=event.resource_path,
         resource_content_type=event.resource_content_type,
-      ):
-        results = event.module.preprocess(
-          workspace_path=workspace_path,
-          latest_cache_path=latest_cache_path,
-          base_id=event.base.id,
-          resource_hash=event.resource_hash,
-          resource_path=event.resource_path,
-          resource_content_type=event.resource_content_type,
-        )
-        for i, result in enumerate(results):
-          base_path: Path
-          if not result.from_cache:
-            base_path = workspace_path
-          else:
-            if latest_cache_path is None:
-              raise ValueError(f"[{i}].from_cache is True but latest_cache_path is None")
-            base_path = latest_cache_path
+        report_progress=lambda progress: self._reporter.report_preproc_progress(
+          event=event,
+          progress=progress,
+        ),
+      )
+      for i, result in enumerate(results):
+        base_path: Path
+        if not result.from_cache:
+          base_path = workspace_path
+        else:
+          if latest_cache_path is None:
+            raise ValueError(f"[{i}].from_cache is True but latest_cache_path is None")
+          base_path = latest_cache_path
 
-          path = Path(result.path)
-          if path.is_absolute():
-            raise ValueError(f"[{i}].path must be relative")
+        path = Path(result.path)
+        if path.is_absolute():
+          raise ValueError(f"[{i}].path must be relative")
 
-          path = base_path.joinpath(path)
-          documents.append(DocumentDescription(
-            hash=result.hash,
-            path=path,
-            meta=result.meta,
-          ))
+        path = base_path.joinpath(path)
+        documents.append(DocumentDescription(
+          hash=result.hash,
+          path=path,
+          meta=result.meta,
+        ))
     except InterruptedException:
       return None
+
+    except Exception as e:
+      error = e
+      raise e
+
+    finally:
+      if error is None:
+        self._reporter.report_preproc_done(event_id, event, documents)
+      else:
+        self._reporter.report_preproc_done(event_id, event, error)
 
     return lambda: self._machine.complete_preproc_task(
       event=event,
@@ -176,24 +198,46 @@ class ProcessHub:
 
   # running in background thread
   def _handle_index_event(self, event: HandleIndexEvent) -> None | Callable[[], None]:
+    event_id: int
+    error: Exception | None = None
     try:
+      event_id = self._reporter.report_handle_index_begin(event)
       if event.operation == IndexTaskOperation.CREATE:
         event.module.add(
           base_id=event.base.id,
           document_hash=event.document_hash,
           document_path=event.document_path,
           document_meta=event.document_meta,
+          report_progress=lambda progress: self._reporter.report_handle_index_progress(
+            event=event,
+            progress=progress,
+          ),
         )
       elif event.operation == IndexTaskOperation.REMOVE:
         event.module.remove(
           base_id=event.base.id,
           document_hash=event.document_hash,
           document_path=event.document_path,
+          report_progress=lambda progress: self._reporter.report_handle_index_progress(
+            event=event,
+            progress=progress,
+          ),
         )
       else:
         raise ValueError(f"Unknown operation: {event.operation}")
 
     except InterruptedException:
       return None
+
+    except Exception as e:
+      error = e
+      raise e
+
+    finally:
+      self._reporter.report_handle_index_done(
+        id=event_id,
+        event=event,
+        error=error,
+      )
 
     return lambda: self._machine.complete_index_task(event)

@@ -1,9 +1,10 @@
-from typing import Iterable, Generator
+from typing import Iterable, Generator, Callable
 from os import PathLike
 from pathlib import Path
 
 from ..sqlite3_pool import ThreadPoolContext
-from ..module import T, R, Module, KnowledgeBase, ResourceModule
+from ..module import T, R, Event, Module, KnowledgeBase, ResourceModule
+from ..reporter import EventReporter
 from ..state_machine import StateMachine, StateMachineState
 from ..interruption import Interruption
 from .scan_hub import ScanHub
@@ -18,8 +19,10 @@ class KnowledgeBasesHub:
         scan_workers: int,
         process_workers: int,
         modules: Iterable[Module],
+        listener: Callable[[Event], None] | None = None,
       ) -> None:
 
+    reporter = EventReporter(listener)
     self._interruption: Interruption = Interruption()
     self._machine: StateMachine = StateMachine(
       db_path=Path(db_path),
@@ -28,11 +31,13 @@ class KnowledgeBasesHub:
     self._scan_hub: ScanHub = ScanHub(
       state_machine=self._machine,
       interruption=self._interruption,
+      reporter=reporter,
     )
     self._process_hub: ProcessHub = ProcessHub(
       state_machine=self._machine,
       preprocess_dir_path=Path(preprocess_path),
       interruption=self._interruption,
+      reporter=reporter,
     )
     self._scan_workers: int = scan_workers
     self._process_workers: int = process_workers
@@ -49,23 +54,19 @@ class KnowledgeBasesHub:
       self._machine.goto_setting()
 
   def get_knowledge_base(self, id: int) -> KnowledgeBase:
-    with ThreadPoolContext():
-      return self._machine.get_knowledge_base(id)
+    return self._machine.get_knowledge_base(id)
 
   def get_knowledge_bases(self) -> Generator[KnowledgeBase, None, None]:
-    with ThreadPoolContext():
-      yield from self._machine.get_knowledge_bases()
+    yield from self._machine.get_knowledge_bases()
 
   def create_knowledge_base(
         self,
         resource_module: ResourceModule[T, R],
         resource_param: T,
       ) -> KnowledgeBase[T, R]:
-
-    with ThreadPoolContext():
-      return self._machine.create_knowledge_base(
-        resource_param=(resource_module, resource_param),
-      )
+    return self._machine.create_knowledge_base(
+      resource_param=(resource_module, resource_param),
+    )
 
   def remove_knowledge_base(self, knbase: KnowledgeBase) -> None:
     with ThreadPoolContext():

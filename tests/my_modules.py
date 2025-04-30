@@ -1,4 +1,4 @@
-from typing import Any, Generator, Iterable
+from typing import Any, Generator, Iterable, Callable
 from pathlib import Path
 
 from knbase.module import (
@@ -60,6 +60,7 @@ class MyPreprocessingModule(PreprocessingModule[Any]):
         resource_hash: bytes,
         resource_path: Path,
         resource_content_type: str,
+        report_progress: Callable[[float], None],
       ) -> list[PreprocessingResult[Any]]:
     raise NotImplementedError()
 
@@ -73,6 +74,7 @@ class MyIndexModule(IndexModule[Any]):
         document_hash: bytes,
         document_path: Path,
         document_meta: Any,
+        report_progress: Callable[[float], None],
       ) -> None:
     raise NotImplementedError()
 
@@ -80,5 +82,6 @@ class MyIndexModule(IndexModule[Any]):
         self,
         base_id: int,
         document_hash: bytes,
+        report_progress: Callable[[float], None],
       ) -> None:
     raise NotImplementedError()

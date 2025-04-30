@@ -3,7 +3,7 @@ import pikepdf
 import pdfplumber
 import knbase
 
-from typing import Generator
+from typing import Generator, Callable
 from pathlib import Path
 from json import loads, dumps
 from knbase import load_document, save_document
@@ -41,6 +41,7 @@ class PDFParserModule(knbase.PreprocessingModule[PDFMeta | PDFPage | PDFAnnotati
         resource_hash: bytes,
         resource_path: Path,
         resource_content_type: str,
+        report_progress: Callable[[float], None], # TODO:
       ) -> list[PreprocessingResult]:
 
     results: list[PreprocessingResult] = []

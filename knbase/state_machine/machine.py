@@ -5,6 +5,7 @@ from sqlite3 import Cursor
 
 from ..sqlite3_pool import SQLite3Pool
 from ..module import T, R, Resource, Module, ResourceModule, PreprocessingModule, IndexModule
+
 from .common import FRAMEWORK_DB
 from .types import DocumentDescription, PreprocessingEvent, HandleIndexEvent, RemovedResourceEvent
 from .module_context import ModuleContext
@@ -20,7 +21,12 @@ class StateMachineState(Enum):
   PROCESSING = 2
 
 class StateMachine:
-  def __init__(self, db_path: Path, modules: Iterable[Module]):
+  def __init__(
+        self,
+        db_path: Path,
+        modules: Iterable[Module],
+      ) -> None:
+
     self._db: SQLite3Pool = SQLite3Pool(FRAMEWORK_DB, db_path)
     self._preproc_tasks: list[PreprocessingTask] = []
     self._preproc_tasks_pop_count: int = 0
@@ -118,7 +124,7 @@ class StateMachine:
     with self._db.connect() as (cursor, conn):
       try:
         cursor.execute("BEGIN TRANSACTION")
-        if next()(
+        if next(
           self._resource_model.list_resource_hashes(cursor, base),
           None,
         ) is not None:

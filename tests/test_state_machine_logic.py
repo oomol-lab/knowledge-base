@@ -27,8 +27,10 @@ class TestStateMachineLogic(unittest.TestCase):
       preproc_module,
       index_module,
     )
-    machine = StateMachine(db_path, modules)
-
+    machine = StateMachine(
+      db_path=db_path,
+      modules=modules,
+    )
     self.assertEqual(machine.state, StateMachineState.SETTING)
     self.assertListEqual(
       list1=[b.id for b in machine.get_knowledge_bases()],
@@ -126,7 +128,10 @@ class TestStateMachineLogic(unittest.TestCase):
       ],
     )
     # to check that state machine can recover from database
-    machine = StateMachine(db_path, modules)
+    machine = StateMachine(
+      db_path=db_path,
+      modules=modules,
+    )
     self.assertEqual(machine.state, StateMachineState.PROCESSING)
     handle_index_events = list(self._pop_all(machine.pop_handle_index_event))
 

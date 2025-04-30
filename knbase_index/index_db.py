@@ -130,6 +130,7 @@ class _VectorIndexModule(IndexModule[T]):
         document_hash: bytes,
         document_path: Path,
         document_meta: T,
+        report_progress: Callable[[float], None],
       ) -> None:
 
     id = self._to_id(base_id, document_hash)
@@ -139,6 +140,7 @@ class _VectorIndexModule(IndexModule[T]):
         self,
         base_id: int,
         document_hash: bytes,
+        report_progress: Callable[[float], None],
       ) -> None:
 
     id = self._to_id(base_id, document_hash)
