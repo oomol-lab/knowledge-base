@@ -60,7 +60,7 @@ def routes(app: Flask, service: Service) -> None:
 
   @app.route("/api/scanning", methods=["POST"])
   def post_scanning():
-    service.start_scanning()
+    service.scan()
     return jsonify(None), 201
 
   @app.route("/api/bases", methods=["GET"])

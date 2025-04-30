@@ -1,6 +1,8 @@
 from os import PathLike
+from traceback import print_exc
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
+from threading import Thread
 
 from knbase import KnowledgeBasesHub
 from knbase_file_scanner import FileScannerModule
@@ -60,6 +62,26 @@ class Service:
         *index_db.modules,
       ),
     )
+
+  def scan(self) -> None:
+    Thread(target=self._run_scan).start()
+
+  def _run_scan(self) -> None:
+    try:
+      self._hub.scan()
+    except Exception:
+      print_exc()
+
+  def interrupt_scanning(self) -> None:
+    self._hub.interrupt()
+
+  def gen_scanning_sse_lines(self) -> Generator[str, None, None]:
+    try:
+      pass
+      # for event in self._progress_events.fetch_events():
+      #   yield f"data: {dumps(event, ensure_ascii=False)}\n\n"
+    finally:
+      print("SSE closed")
 
   def bases(self) -> list[dict[str, Any]]:
     return [
