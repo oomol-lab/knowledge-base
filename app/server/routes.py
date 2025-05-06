@@ -40,7 +40,7 @@ def routes(app: Flask, service: Service) -> None:
     if results_limit == "":
       raise ValueError("Invalid resultsLimit")
 
-    result = service.ref.query(
+    result = service.query(
       text=query,
       results_limit=int(results_limit),
     )

@@ -69,7 +69,7 @@ class DocumentModel:
 
     cursor.execute(
       """
-      SELECT id, res_hash, path, meta FROM documents
+      SELECT id, preproc_module, doc_hash, res_hash, path, meta FROM documents
       WHERE preproc_module = ? AND knbase = ? AND doc_hash = ?
       """,
       (
@@ -82,7 +82,7 @@ class DocumentModel:
     if row is None:
       return None
 
-    preproc_module, document_hash, resource_hash, path, meta_text = row
+    id, preproc_module, document_hash, resource_hash, path, meta_text = row
     return Document(
       id=id,
       preproc_module=self._ctx.module(preproc_module),

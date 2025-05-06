@@ -10,6 +10,7 @@ from knbase_file_scanner import FileScannerModule
 from knbase_pdf_parser import PDFParserModule
 from knbase_index import IndexDatabase
 
+from .query import Query, QueryResult
 from .progress_events import ProgressEvents
 from .scanning_context import ScanningContext
 
@@ -23,7 +24,7 @@ class Service:
       raise NotADirectoryError(f"{app_path} is not a directory")
 
     pdf_parser_module = PDFParserModule()
-    index_db = IndexDatabase(base_path=app_path)
+    index_db: IndexDatabase = IndexDatabase(base_path=app_path)
 
     self._progress_events: ProgressEvents = ProgressEvents()
     self._scanning_context: ScanningContext = ScanningContext(self._progress_events)
@@ -44,34 +45,17 @@ class Service:
         *index_db.modules,
       ),
     )
-
-  def _create_hub(self, app_path: Path) -> KnowledgeBasesHub:
-    if not app_path.exists():
-      app_path.mkdir(parents=True)
-    elif not app_path.is_dir():
-      raise NotADirectoryError(f"{app_path} is not a directory")
-
-    pdf_parser_module = PDFParserModule()
-    index_db = IndexDatabase(base_path=app_path)
-    file_scanner_module = FileScannerModule(
-      db_path=app_path.joinpath("file-scanner.sqlite3"),
-      preprocess_modules_map={"*": pdf_parser_module},
-      index_modules=[*index_db.modules],
+    self._query: Query = Query(
+      hub=self._hub,
+      index_db=index_db,
     )
-    return KnowledgeBasesHub(
-      db_path=app_path.joinpath("main.sqlite3"),
-      preprocess_path=app_path.joinpath("preprocess"),
-      scan_workers=2,
-      process_workers=2,
-      modules=(
-        file_scanner_module,
-        pdf_parser_module,
-        *index_db.modules,
-      ),
-    )
+    index_db.set_hub(self._hub)
 
   def scan(self) -> None:
     Thread(target=self._run_scan).start()
+
+  def query(self, text: str, results_limit: int) -> QueryResult:
+    return self._query.do(text, results_limit)
 
   def _run_scan(self) -> None:
     self._scanning_context.notify_start()

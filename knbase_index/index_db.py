@@ -67,7 +67,7 @@ class IndexDatabase(Generic[T]):
   def query(self, query: str, results_limit: int) -> list[IndexRow]:
     rows: list[IndexRow] = []
     for node in self._query.do(query, results_limit):
-      base_id, preproc_module_id, document_hash = node.id.split("/", maxsplit=1)
+      base_id, preproc_module_id, document_hash = node.id.split("/", maxsplit=2)
       base_id = int(base_id)
       rows.append(IndexRow(
         base=self._hub.get_knowledge_base(base_id),
