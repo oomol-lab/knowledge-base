@@ -1,6 +1,8 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
+from knbase import KnowledgeBase, PreprocessingModule
+
 
 class IndexNodeMatching(Enum):
   Matched = "matched"
@@ -9,8 +11,9 @@ class IndexNodeMatching(Enum):
 
 @dataclass
 class IndexRow:
-  base_id: int
-  resource_hash: bytes
+  base: KnowledgeBase
+  preproc_module: PreprocessingModule
+  document_hash: bytes
   matching: IndexNodeMatching
   metadata: dict
   fts5_rank: float

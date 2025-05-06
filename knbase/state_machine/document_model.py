@@ -14,7 +14,7 @@ from .module_context import ModuleContext, PreprocessingModule
 @dataclass
 class Document:
   id: int
-  preprocessing_module: PreprocessingModule
+  preproc_module: PreprocessingModule
   base: KnowledgeBase
   resource_hash: bytes
   document_hash: bytes
@@ -51,7 +51,7 @@ class DocumentModel:
     preproc_module, document_hash, resource_hash, path, meta_text = row
     return Document(
       id=id,
-      preprocessing_module=self._ctx.module(preproc_module),
+      preproc_module=self._ctx.module(preproc_module),
       base=base,
       resource_hash=resource_hash,
       document_hash=document_hash,
@@ -59,10 +59,44 @@ class DocumentModel:
       meta=loads(meta_text),
     )
 
-  def get_documents(
+  def get_document_with_hash(
         self,
         cursor: Cursor,
-        preprocessing_module: PreprocessingModule,
+        preproc_module: PreprocessingModule,
+        base: KnowledgeBase,
+        document_hash: bytes,
+      ) -> Document | None:
+
+    cursor.execute(
+      """
+      SELECT id, res_hash, path, meta FROM documents
+      WHERE preproc_module = ? AND knbase = ? AND doc_hash = ?
+      """,
+      (
+        self._ctx.module_id(preproc_module),
+        base.id,
+        document_hash,
+      ),
+    )
+    row = cursor.fetchone()
+    if row is None:
+      return None
+
+    preproc_module, document_hash, resource_hash, path, meta_text = row
+    return Document(
+      id=id,
+      preproc_module=self._ctx.module(preproc_module),
+      base=base,
+      resource_hash=resource_hash,
+      document_hash=document_hash,
+      path=Path(path),
+      meta=loads(meta_text),
+    )
+
+  def get_documents_of(
+        self,
+        cursor: Cursor,
+        preproc_module: PreprocessingModule,
         base: KnowledgeBase,
         resource_hash: bytes,
       ) -> Generator[Document, None, None]:
@@ -73,7 +107,7 @@ class DocumentModel:
       WHERE preproc_module =? AND knbase = ? AND res_hash = ?
       """,
       (
-        self._ctx.module_id(preprocessing_module),
+        self._ctx.module_id(preproc_module),
         base.id,
         resource_hash,
       ),
@@ -92,7 +126,7 @@ class DocumentModel:
         preproc_module, document_hash, path, meta_text = row
         yield Document(
           id=document_id,
-          preprocessing_module=self._ctx.module(preproc_module),
+          preproc_module=self._ctx.module(preproc_module),
           base=base,
           resource_hash=resource_hash,
           document_hash=document_hash,
@@ -103,7 +137,7 @@ class DocumentModel:
   def append_document(
         self,
         cursor: Cursor,
-        preprocessing_module: PreprocessingModule,
+        preproc_module: PreprocessingModule,
         base: KnowledgeBase,
         resource_hash: bytes,
         document_hash: bytes,
@@ -114,7 +148,7 @@ class DocumentModel:
     cursor.execute(
       "SELECT id FROM documents WHERE preproc_module = ? AND knbase = ? AND doc_hash = ?",
       (
-        self._ctx.module_id(preprocessing_module),
+        self._ctx.module_id(preproc_module),
         base.id,
         document_hash,
       ),
@@ -140,7 +174,7 @@ class DocumentModel:
         VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
-          self._ctx.module_id(preprocessing_module),
+          self._ctx.module_id(preproc_module),
           base.id,
           document_hash,
           resource_hash,
@@ -156,7 +190,7 @@ class DocumentModel:
       AND knbase = ? AND res_hash = ? AND doc_hash = ?
       """,
       (
-        self._ctx.module_id(preprocessing_module),
+        self._ctx.module_id(preproc_module),
         base.id,
         resource_hash,
         document_hash,
@@ -169,7 +203,7 @@ class DocumentModel:
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
-          self._ctx.module_id(preprocessing_module),
+          self._ctx.module_id(preproc_module),
           base.id,
           resource_hash,
           document_hash,
@@ -180,7 +214,7 @@ class DocumentModel:
       )
     return Document(
       id=document_id,
-      preprocessing_module=preprocessing_module,
+      preproc_module=preproc_module,
       base=base,
       resource_hash=resource_hash,
       document_hash=document_hash,
@@ -197,7 +231,7 @@ class DocumentModel:
   def remove_references_from_resource(
         self,
         cursor: Cursor,
-        preprocessing_module: PreprocessingModule,
+        preproc_module: PreprocessingModule,
         base: KnowledgeBase,
         resource_hash: bytes,
       ) -> None:
@@ -208,7 +242,7 @@ class DocumentModel:
       WHERE preproc_module = ? AND knbase = ? AND res_hash = ?
       """,
       (
-        self._ctx.module_id(preprocessing_module),
+        self._ctx.module_id(preproc_module),
         base.id,
         resource_hash,
       ),

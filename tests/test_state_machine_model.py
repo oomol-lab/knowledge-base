@@ -217,7 +217,7 @@ class TestStateMachineModel(unittest.TestCase):
     with db.connect() as (cursor, conn):
       document1 = model.append_document(
         cursor=cursor,
-        preprocessing_module=resource_key1[0],
+        preproc_module=resource_key1[0],
         base=resource_key1[1],
         resource_hash=resource_key1[2],
         document_hash=b"DOCUMENT-HASH-1",
@@ -226,7 +226,7 @@ class TestStateMachineModel(unittest.TestCase):
       )
       document2 = model.append_document(
         cursor=cursor,
-        preprocessing_module=resource_key1[0],
+        preproc_module=resource_key1[0],
         base=resource_key1[1],
         resource_hash=resource_key1[2],
         document_hash=b"DOCUMENT-HASH-2",
@@ -235,7 +235,7 @@ class TestStateMachineModel(unittest.TestCase):
       )
       document3 = model.append_document(
         cursor=cursor,
-        preprocessing_module=resource_key2[0],
+        preproc_module=resource_key2[0],
         base=resource_key2[1],
         resource_hash=resource_key2[2],
         document_hash=b"DOCUMENT-HASH-3",
@@ -253,18 +253,18 @@ class TestStateMachineModel(unittest.TestCase):
       self.assertEqual(1, model.get_document_refs_count(cursor, document3))
       self.assertListEqual(
         list1=[document1.id, document2.id],
-        list2=[d.id for d in model.get_documents(
+        list2=[d.id for d in model.get_documents_of(
           cursor=cursor,
-          preprocessing_module=resource_key1[0],
+          preproc_module=resource_key1[0],
           base=resource_key1[1],
           resource_hash=resource_key1[2],
         )],
       )
       self.assertListEqual(
         list1=[document3.id],
-        list2=[d.id for d in model.get_documents(
+        list2=[d.id for d in model.get_documents_of(
           cursor=cursor,
-          preprocessing_module=resource_key2[0],
+          preproc_module=resource_key2[0],
           base=resource_key2[1],
           resource_hash=resource_key2[2],
         )],
@@ -273,7 +273,7 @@ class TestStateMachineModel(unittest.TestCase):
     with db.connect() as (cursor, conn):
       model.append_document(
         cursor=cursor,
-        preprocessing_module=resource_key1[0],
+        preproc_module=resource_key1[0],
         base=resource_key1[1],
         resource_hash=resource_key1[2],
         document_hash=b"DOCUMENT-HASH-3",
@@ -282,7 +282,7 @@ class TestStateMachineModel(unittest.TestCase):
       )
       model.append_document(
         cursor=cursor,
-        preprocessing_module=resource_key2[0],
+        preproc_module=resource_key2[0],
         base=resource_key2[1],
         resource_hash=resource_key2[2],
         document_hash=b"DOCUMENT-HASH-2",
@@ -297,18 +297,18 @@ class TestStateMachineModel(unittest.TestCase):
       self.assertEqual(2, model.get_document_refs_count(cursor, document3))
       self.assertListEqual(
         list1=[document1.id, document2.id, document3.id],
-        list2=[d.id for d in model.get_documents(
+        list2=[d.id for d in model.get_documents_of(
           cursor=cursor,
-          preprocessing_module=resource_key1[0],
+          preproc_module=resource_key1[0],
           base=resource_key1[1],
           resource_hash=resource_key1[2],
         )],
       )
       self.assertListEqual(
         list1=[document2.id, document3.id],
-        list2=[d.id for d in model.get_documents(
+        list2=[d.id for d in model.get_documents_of(
           cursor=cursor,
-          preprocessing_module=resource_key2[0],
+          preproc_module=resource_key2[0],
           base=resource_key2[1],
           resource_hash=resource_key2[2],
         )],
@@ -317,7 +317,7 @@ class TestStateMachineModel(unittest.TestCase):
     with db.connect() as (cursor, conn):
       model.remove_references_from_resource(
         cursor=cursor,
-        preprocessing_module=resource_key2[0],
+        preproc_module=resource_key2[0],
         base=resource_key2[1],
         resource_hash=resource_key2[2],
       )
@@ -421,7 +421,7 @@ class TestStateMachineModel(unittest.TestCase):
     with db.connect() as (cursor, conn):
       document1 = doc_model.append_document(
         cursor=cursor,
-        preprocessing_module=preproc_module,
+        preproc_module=preproc_module,
         base=knbase,
         resource_hash=b"HASH1",
         document_hash=b"DOC-HASH1",
@@ -430,7 +430,7 @@ class TestStateMachineModel(unittest.TestCase):
       )
       document2 = doc_model.append_document(
         cursor=cursor,
-        preprocessing_module=preproc_module,
+        preproc_module=preproc_module,
         base=knbase,
         resource_hash=b"HASH2",
         document_hash=b"DOC-HASH2",
@@ -440,6 +440,7 @@ class TestStateMachineModel(unittest.TestCase):
       index_task1 = model.create_index_task(
         cursor=cursor,
         event_id=1,
+        preproc_module=preproc_module,
         index_module=index_module,
         base=knbase,
         document=document1,
@@ -448,6 +449,7 @@ class TestStateMachineModel(unittest.TestCase):
       index_task2 = model.create_index_task(
         cursor=cursor,
         event_id=2,
+        preproc_module=preproc_module,
         index_module=index_module,
         base=knbase,
         document=document2,

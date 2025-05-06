@@ -35,11 +35,11 @@ class StateMachine:
     self._removed_resource_events: list[RemovedResourceEvent] = []
 
     with self._db.connect() as (cursor, conn):
-      model_context = ModuleContext(cursor, modules)
-      self._base_model: KnowledgeBaseModel = KnowledgeBaseModel(model_context)
-      self._resource_model: ResourceModel = ResourceModel(model_context)
-      self._document_model: DocumentModel = DocumentModel(model_context)
-      self._task_model: TaskModel = TaskModel(model_context)
+      self._model_context: ModuleContext = ModuleContext(cursor, modules)
+      self._base_model: KnowledgeBaseModel = KnowledgeBaseModel(self._model_context)
+      self._resource_model: ResourceModel = ResourceModel(self._model_context)
+      self._document_model: DocumentModel = DocumentModel(self._model_context)
+      self._task_model: TaskModel = TaskModel(self._model_context)
       self._state: StateMachineState = StateMachineState.SETTING
 
       self._load_tasks(cursor)
@@ -54,6 +54,10 @@ class StateMachine:
   @property
   def state(self) -> StateMachineState:
     return self._state
+
+  @property
+  def module_context(self) -> ModuleContext:
+    return self._model_context
 
   def goto_setting(self) -> None:
     if self._state != StateMachineState.SETTING:
@@ -135,6 +139,14 @@ class StateMachine:
       except BaseException as e:
         conn.rollback()
         raise e
+
+  def get_resources(self, base: KnowledgeBase, hash: bytes) -> Generator[Resource, None, None]:
+    with self._db.connect() as (cursor, _):
+      yield from self._resource_model.get_resources(
+        cursor=cursor,
+        knbase=base,
+        hash=hash,
+      )
 
   def put_resource(
         self,
@@ -259,6 +271,32 @@ class StateMachine:
         conn.rollback()
         raise e
 
+  def get_document(
+        self,
+        base: KnowledgeBase,
+        preproc_module: PreprocessingModule,
+        document_hash: bytes,
+      ) -> DocumentDescription | None:
+
+    with self._db.connect() as (cursor, _):
+      document = self._document_model.get_document_with_hash(
+        cursor=cursor,
+        base=base,
+        preproc_module=preproc_module,
+        document_hash=document_hash,
+      )
+      if document is None:
+        return None
+
+      return DocumentDescription(
+        base=base,
+        preproc_module=preproc_module,
+        resource_hash=document.resource_hash,
+        document_hash=document.document_hash,
+        path=document.path,
+        meta=document.meta,
+      )
+
   def pop_preproc_event(self) -> PreprocessingEvent | None:
     assert self._state == StateMachineState.PROCESSING
     if not self._preproc_tasks:
@@ -297,7 +335,8 @@ class StateMachine:
       proto_event_id=task.event,
       task_id=task.id,
       base=task.base,
-      module=task.index_module,
+      preproc_module=task.preproc_module,
+      index_module=task.index_module,
       operation=task.operation,
       document_hash=document.document_hash,
       document_path=document.path,
@@ -330,10 +369,10 @@ class StateMachine:
         for descr in document_descriptions:
           document = self._document_model.append_document(
             cursor=cursor,
-            preprocessing_module=task.preproc_module,
+            preproc_module=task.preproc_module,
             base=task.base,
             resource_hash=task.resource_hash,
-            document_hash=descr.hash,
+            document_hash=descr.document_hash,
             path=descr.path,
             meta=descr.meta,
           )
@@ -350,6 +389,7 @@ class StateMachine:
               index_task = self._task_model.create_index_task(
                 cursor=cursor,
                 event_id=task.event_id,
+                preproc_module=task.preproc_module,
                 index_module=index_module,
                 base=task.base,
                 document=document,
@@ -461,33 +501,33 @@ class StateMachine:
         resource_content_type: str,
       ) -> None:
 
-    removed_documents_dict: dict[int, Document] = {}
+    removed_document_pairs_dict: dict[int, tuple[PreprocessingModule, Document]] = {}
 
     for preproc_module in self._preprocess_modules(
       base=base,
       content_type=resource_content_type,
     ):
-      documents = list(self._document_model.get_documents(
+      documents = list(self._document_model.get_documents_of(
         cursor=cursor,
-        preprocessing_module=preproc_module,
+        preproc_module=preproc_module,
         base=base,
         resource_hash=resource_hash,
       ))
       self._document_model.remove_references_from_resource(
         cursor=cursor,
-        preprocessing_module=preproc_module,
+        preproc_module=preproc_module,
         base=base,
         resource_hash=resource_hash,
       )
       for document in documents:
         if self._document_refs(cursor, document) == 0:
-          removed_documents_dict[document.id] = document
+          removed_document_pairs_dict[document.id] = (preproc_module, document)
 
-    removed_documents = list(removed_documents_dict.values())
-    removed_documents.sort(key=lambda d: d.id)
+    removed_document_pairs = list(removed_document_pairs_dict.values())
+    removed_document_pairs.sort(key=lambda e: e[1].id)
     index_modules = list(self._index_modules(base))
 
-    for document in removed_documents:
+    for preproc_module, document in removed_document_pairs:
       if len(index_modules) == 0:
         self._document_model.remove_document(cursor, document)
       else:
@@ -495,6 +535,7 @@ class StateMachine:
           index_task = self._task_model.create_index_task(
             cursor=cursor,
             event_id=event_id,
+            preproc_module=preproc_module,
             index_module=index_module,
             base=base,
             document=document,

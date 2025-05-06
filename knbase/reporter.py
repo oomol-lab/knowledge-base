@@ -132,7 +132,7 @@ class EventReporter:
         hash=event.resource_hash,
         content_type=event.resource_content_type,
         module=event.module,
-        documents=[DocumentInfo(hash=doc.hash) for doc in target],
+        documents=[DocumentInfo(hash=doc.document_hash) for doc in target],
       ))
 
   def report_handle_index_begin(self, event: HandleIndexEvent) -> int:
@@ -144,7 +144,7 @@ class EventReporter:
       id=id,
       base=event.base,
       hash=event.document_hash,
-      module=event.module,
+      module=event.index_module,
       updating=self._operation_to_updating(event.operation),
     ))
     return id
@@ -157,7 +157,7 @@ class EventReporter:
       id=event.proto_event_id,
       base=event.base,
       hash=event.document_hash,
-      module=event.module,
+      module=event.index_module,
       updating=self._operation_to_updating(event.operation),
       progress=progress,
     ))
@@ -177,7 +177,7 @@ class EventReporter:
         id=id,
         base=event.base,
         hash=event.document_hash,
-        module=event.module,
+        module=event.index_module,
         updating=self._operation_to_updating(event.operation),
       ))
     else:
@@ -185,7 +185,7 @@ class EventReporter:
         id=id,
         base=event.base,
         hash=event.document_hash,
-        module=event.module,
+        module=event.index_module,
         updating=self._operation_to_updating(event.operation),
         error=error,
       ))

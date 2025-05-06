@@ -6,7 +6,7 @@ from os import PathLike
 from pathlib import Path
 from enum import Enum
 from typing import Generic, Callable
-from knbase import load_document, T, IndexModule
+from knbase import load_document, T, KnowledgeBase, KnowledgeBasesHub, PreprocessingModule, IndexModule
 
 from .types import IndexRow
 from .fts5_db import FTS5DB
@@ -31,6 +31,7 @@ class IndexDatabase(Generic[T]):
     self._base_path: Path = Path(base_path)
     self._vector_path: Path = self._base_path.joinpath("chroma")
     self._segmentation: Segmentation = Segmentation()
+    self._hub: KnowledgeBasesHub = None
     self._fts5_db = FTS5DB(
       db_path=self._base_path.joinpath("fts5.sqlite3"),
     )
@@ -60,15 +61,18 @@ class IndexDatabase(Generic[T]):
   def modules(self) -> tuple[IndexModule[T], ...]:
     return self._modules
 
+  def set_hub(self, hub: KnowledgeBasesHub) -> None:
+    self._hub = hub
+
   def query(self, query: str, results_limit: int) -> list[IndexRow]:
     rows: list[IndexRow] = []
     for node in self._query.do(query, results_limit):
-      base_id, resource_hash = node.id.split("/", maxsplit=1)
+      base_id, preproc_module_id, document_hash = node.id.split("/", maxsplit=1)
       base_id = int(base_id)
-      resource_hash = bytes.fromhex(resource_hash)
       rows.append(IndexRow(
-        base_id=base_id,
-        resource_hash=resource_hash,
+        base=self._hub.get_knowledge_base(base_id),
+        preproc_module=self._hub.preproc_module(preproc_module_id),
+        document_hash=bytes.fromhex(document_hash),
         matching=node.matching,
         metadata=node.metadata,
         fts5_rank=node.fts5_rank,
@@ -126,25 +130,32 @@ class _VectorIndexModule(IndexModule[T]):
 
   def add(
         self,
-        base_id: int,
+        base: KnowledgeBase,
+        preproc_module: PreprocessingModule,
         document_hash: bytes,
         document_path: Path,
         document_meta: T,
         report_progress: Callable[[float], None],
       ) -> None:
 
-    id = self._to_id(base_id, document_hash)
+    id = self._to_id(base, preproc_module, document_hash)
     self._add_document(self._kind, id, document_path, document_meta)
 
   def remove(
         self,
-        base_id: int,
+        base: KnowledgeBase,
+        preproc_module: PreprocessingModule,
         document_hash: bytes,
         report_progress: Callable[[float], None],
       ) -> None:
 
-    id = self._to_id(base_id, document_hash)
+    id = self._to_id(base, preproc_module, document_hash)
     self._remove_document(self._kind, id)
 
-  def _to_id(self, base_id: int, document_hash: bytes) -> str:
-    return f"{base_id}/{document_hash.hex()}"
+  def _to_id(
+        self,
+        base: KnowledgeBase,
+        preproc_module: PreprocessingModule,
+        document_hash: bytes,
+      ) -> str:
+    return f"{base.id}/{preproc_module.id}/{document_hash.hex()}"

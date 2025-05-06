@@ -24,6 +24,24 @@ class ModuleContext:
   def module_id(self, module: Module) -> int:
     return self._module2id[module.id]
 
+  def resource_module(self, id: str) -> ResourceModule:
+    module = self._str_id_2_module(id)
+    if not isinstance(module, ResourceModule):
+      raise TypeError(f"Module {id} is not a ResourceModule")
+    return module
+
+  def preproc_module(self, id: str) -> PreprocessingModule:
+    module = self._str_id_2_module(id)
+    if not isinstance(module, PreprocessingModule):
+      raise TypeError(f"Module {id} is not a PreprocessingModule")
+    return module
+
+  def index_module(self, id: str) -> IndexModule:
+    module = self._str_id_2_module(id)
+    if not isinstance(module, IndexModule):
+      raise TypeError(f"Module {id} is not an IndexModule")
+    return module
+
   def _bind_modules(self, cursor: Cursor, iter_modules: Iterable[Module]):
     modules: dict[int, Module] = {}
     module2id: dict[str, int] = {}
@@ -66,6 +84,12 @@ class ModuleContext:
       module2id[module.id] = id
 
     return modules, module2id
+
+  def _str_id_2_module(self, id: str) -> Module:
+    int_id = self._module2id.get(id, None)
+    if int_id is None:
+      raise ValueError(f"Module with id {id} not found")
+    return self._modules[int_id]
 
 def _create_tables(cursor: Cursor):
   cursor.execute("""

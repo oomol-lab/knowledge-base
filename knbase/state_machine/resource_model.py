@@ -74,7 +74,7 @@ class ResourceModel:
       "SELECT id, content_type, meta, updated_at FROM resources WHERE knbase = ? AND hash = ? ORDER BY updated_at DESC",
       (knbase.id, hash),
     )
-    for row in cursor.fetchall():
+    for row in fetchmany(cursor):
       resource_id, content_type, meta_text, updated_at = row
       yield Resource(
         id=resource_id,

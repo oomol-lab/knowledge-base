@@ -38,6 +38,7 @@ class IndexTask:
   event: int
   document_id: int
   base: KnowledgeBase
+  preproc_module: PreprocessingModule
   index_module: IndexModule
   operation: IndexTaskOperation
   created_at: int
@@ -104,7 +105,7 @@ class TaskModel:
       ) -> IndexTask | None:
     cursor.execute(
       """
-      SELECT id, index_module, document, operation, event, created_at
+      SELECT id, preproc_module, index_module, document, operation, event, created_at
       FROM index_tasks WHERE knbase = ? AND id = ?
       """,
       (base.id, task_id),
@@ -113,9 +114,10 @@ class TaskModel:
     if row is None:
       return None
 
-    task_id, index_module_id, document_id, operation_id, event_id, created_at = row
+    task_id, preproc_module_id, index_module_id, document_id, operation_id, event_id, created_at = row
     return IndexTask(
       id=task_id,
+      preproc_module=self._ctx.module(preproc_module_id),
       index_module=self._ctx.module(index_module_id),
       base=base,
       document_id=document_id,
@@ -183,16 +185,17 @@ class TaskModel:
   def get_index_tasks(self, cursor: Cursor, base: KnowledgeBase) -> Generator[IndexTask, None, None]:
     cursor.execute(
       """
-      SELECT id, index_module, document, operation, event, created_at
+      SELECT id, preproc_module, index_module, document, operation, event, created_at
       FROM index_tasks WHERE knbase = ?
       ORDER BY created_at, id DESC
       """,
       (base.id,),
     )
     for row in fetchmany(cursor):
-      task_id, index_module_id, document_id, operation_id, event_id, created_at = row
+      task_id, preproc_module_id, index_module_id, document_id, operation_id, event_id, created_at = row
       yield IndexTask(
         id=task_id,
+        preproc_module=self._ctx.module(preproc_module_id),
         index_module=self._ctx.module(index_module_id),
         base=base,
         document_id=document_id,
@@ -210,7 +213,7 @@ class TaskModel:
 
     cursor.execute(
       """
-      SELECT id, document, operation, event, created_at
+      SELECT id, preproc_module, document, operation, event, created_at
       FROM index_tasks WHERE knbase = ? AND index_module = ? AND document = ?
       """,
       (
@@ -220,9 +223,10 @@ class TaskModel:
       ),
     )
     for row in fetchmany(cursor):
-      task_id, document_id, operation_id, event_id, created_at = row
+      task_id, preproc_module_id, document_id, operation_id, event_id, created_at = row
       yield IndexTask(
         id=task_id,
+        preproc_module=self._ctx.module(preproc_module_id),
         index_module=index_module,
         base=document.base,
         document_id=document_id,
@@ -279,6 +283,7 @@ class TaskModel:
         self,
         cursor: Cursor,
         event_id: int,
+        preproc_module: PreprocessingModule,
         index_module: IndexModule,
         base: KnowledgeBase,
         document: Document,
@@ -288,10 +293,11 @@ class TaskModel:
     created_at = int(time() * 1000)
     cursor.execute(
       """
-      INSERT INTO index_tasks (index_module, knbase, document, operation, event, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO index_tasks (preproc_module, index_module, knbase, document, operation, event, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       """,
       (
+        self._ctx.module_id(preproc_module),
         self._ctx.module_id(index_module),
         base.id,
         document.id,
@@ -302,6 +308,7 @@ class TaskModel:
     )
     return IndexTask(
       id=cursor.lastrowid,
+      preproc_module=preproc_module,
       index_module=index_module,
       base=base,
       document_id=document.id,
@@ -384,6 +391,7 @@ def _create_tables(cursor: Cursor):
   cursor.execute("""
     CREATE TABLE index_tasks (
       id INTEGER PRIMARY KEY,
+      preproc_module INTEGER,
       index_module INTEGER NOT NULL,
       knbase INTEGER,
       document INTEGER NOT NULL,

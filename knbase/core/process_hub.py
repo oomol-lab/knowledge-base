@@ -174,7 +174,10 @@ class ProcessHub:
 
         path = base_path.joinpath(path)
         documents.append(DocumentDescription(
-          hash=result.hash,
+          base=event.base,
+          preproc_module=event.module,
+          resource_hash=event.resource_hash,
+          document_hash=result.hash,
           path=path,
           meta=result.meta,
         ))
@@ -203,8 +206,9 @@ class ProcessHub:
     try:
       event_id = self._reporter.report_handle_index_begin(event)
       if event.operation == IndexTaskOperation.CREATE:
-        event.module.add(
-          base_id=event.base.id,
+        event.index_module.add(
+          base=event.base,
+          preproc_module=event.preproc_module,
           document_hash=event.document_hash,
           document_path=event.document_path,
           document_meta=event.document_meta,
@@ -214,8 +218,9 @@ class ProcessHub:
           ),
         )
       elif event.operation == IndexTaskOperation.REMOVE:
-        event.module.remove(
-          base_id=event.base.id,
+        event.index_module.remove(
+          base_id=event.base,
+          preproc_module=event.preproc_module,
           document_hash=event.document_hash,
           document_path=event.document_path,
           report_progress=lambda progress: self._reporter.report_handle_index_progress(

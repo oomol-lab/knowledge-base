@@ -70,7 +70,8 @@ class MyIndexModule(IndexModule[Any]):
 
   def add(
         self,
-        base_id: int,
+        base: KnowledgeBase,
+        preproc_module: PreprocessingModule,
         document_hash: bytes,
         document_path: Path,
         document_meta: Any,
@@ -80,7 +81,8 @@ class MyIndexModule(IndexModule[Any]):
 
   def remove(
         self,
-        base_id: int,
+        base: KnowledgeBase,
+        preproc_module: PreprocessingModule,
         document_hash: bytes,
         report_progress: Callable[[float], None],
       ) -> None:

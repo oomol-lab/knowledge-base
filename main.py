@@ -35,6 +35,8 @@ def main() -> None:
       *index_db.modules,
     ),
   )
+  index_db.set_hub(knbases_hub)
+
   signal.signal(
     signalnum=signal.SIGINT,
     handler=lambda _1, _2: knbases_hub.interrupt(),

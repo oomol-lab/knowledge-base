@@ -3,10 +3,20 @@ from os import PathLike
 from pathlib import Path
 
 from ..sqlite3_pool import ThreadPoolContext
-from ..module import T, R, Event, Module, KnowledgeBase, ResourceModule
 from ..reporter import EventReporter
-from ..state_machine import StateMachine, StateMachineState
+from ..state_machine import StateMachine, StateMachineState, DocumentDescription
 from ..interruption import Interruption
+from ..module import (
+  T, R,
+  Event,
+  Module,
+  KnowledgeBase,
+  Resource,
+  ResourceModule,
+  PreprocessingModule,
+  IndexModule,
+)
+
 from .scan_hub import ScanHub
 from .process_hub import ProcessHub
 
@@ -42,6 +52,15 @@ class KnowledgeBasesHub:
     self._scan_workers: int = scan_workers
     self._process_workers: int = process_workers
 
+  def resource_module(self, id: str) -> ResourceModule:
+    return self._machine.module_context.resource_module(id)
+
+  def preproc_module(self, id: str) -> PreprocessingModule:
+    return self._machine.module_context.preproc_module(id)
+
+  def index_module(self, id: str) -> IndexModule:
+    return self._machine.module_context.index_module(id)
+
   def interrupt(self) -> None:
     self._interruption.interrupt()
 
@@ -52,6 +71,21 @@ class KnowledgeBasesHub:
       self._scan_hub.start_loop(self._scan_workers)
       self._process_hub.start_loop(self._process_workers)
       self._machine.goto_setting()
+
+  def get_resources(self, base: KnowledgeBase[T, R], hash: bytes) -> Generator[Resource[T, R], None, None]:
+    yield from self._machine.get_resources(base, hash)
+
+  def get_document(
+      self,
+      base: KnowledgeBase[T, R],
+      preproc_module: PreprocessingModule[T],
+      hash: bytes) -> DocumentDescription | None:
+
+    return self._machine.get_document(
+      base=base,
+      preproc_module=preproc_module,
+      document_hash=hash,
+    )
 
   def get_knowledge_base(self, id: int) -> KnowledgeBase:
     return self._machine.get_knowledge_base(id)

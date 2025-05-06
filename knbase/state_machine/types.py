@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, TypeVar, Generic
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -6,11 +6,16 @@ from ..module import KnowledgeBase, PreprocessingModule, IndexModule
 from .task_model import IndexTaskOperation
 
 
+M = TypeVar("M")
+
 @dataclass
-class DocumentDescription:
-  hash: bytes
+class DocumentDescription(Generic[M]):
+  base: KnowledgeBase
+  preproc_module: PreprocessingModule
+  resource_hash: bytes
+  document_hash: bytes
   path: Path
-  meta: Any
+  meta: M
 
 @dataclass
 class PreprocessingEvent:
@@ -29,7 +34,8 @@ class HandleIndexEvent:
   proto_event_id: int
   task_id: int
   base: KnowledgeBase
-  module: IndexModule
+  preproc_module: PreprocessingModule
+  index_module: IndexModule
   operation: IndexTaskOperation
   document_hash: bytes
   document_path: Path
