@@ -12,14 +12,14 @@ class ProgressPhase(IntEnum):
   COMPLETED = 3
 
 class InterruptionStatus(IntEnum):
-  No = 0
-  Interrupting = 1
-  Interrupted = 2
+  NO = 0
+  INTERRUPTING = 1
+  INTERRUPTED = 2
 
 class HandleFileOperation(Enum):
-  Create = "create"
-  Update = "update"
-  Remove = "remove"
+  CREATE = "create"
+  UPDATE = "update"
+  REMOVE = "remove"
 
 @dataclass
 class HandingFile:
@@ -40,7 +40,7 @@ class ProgressEvents:
     self._updated_files: int = 0
     self._handing_file: HandingFile | None = None
     self._error: str | None = None
-    self._interruption_status: InterruptionStatus = InterruptionStatus.No
+    self._interruption_status: InterruptionStatus = InterruptionStatus.NO
     self._completed_files: list[File] = []
     self._fetcher_lock: Lock = Lock()
     self._fetcher_queues: list[Queue[dict]] = []
@@ -51,7 +51,7 @@ class ProgressEvents:
         self._updated_files = 0
         self._handing_file = None
         self._error = None
-        self._interruption_status = InterruptionStatus.No
+        self._interruption_status = InterruptionStatus.NO
         self._completed_files.clear()
       self._phase = ProgressPhase.SCANNING
 
@@ -108,9 +108,9 @@ class ProgressEvents:
           "kind": "failure",
           "error": self._error or "",
         })
-      elif self._interruption_status == InterruptionStatus.Interrupting:
+      elif self._interruption_status == InterruptionStatus.INTERRUPTING:
         events.append({ "kind": "interrupting" })
-      elif self._interruption_status == InterruptionStatus.Interrupted:
+      elif self._interruption_status == InterruptionStatus.INTERRUPTED:
         events.append({ "kind": "interrupted" })
 
       return events
@@ -137,6 +137,7 @@ class ProgressEvents:
       "operation": operation.value,
     })
 
+  # TODO: 恢复之前的逻辑，让 scan 结束后就结束
   def notify_complete_handle_file(self, path: str):
     file: File | None = None
     with self._status_lock:
@@ -177,7 +178,7 @@ class ProgressEvents:
       "total": total_pages,
     })
 
-  def complete(self):
+  def notify_complete(self):
     with self._status_lock:
       self._phase = ProgressPhase.COMPLETED
       self._handing_file = None
@@ -188,14 +189,14 @@ class ProgressEvents:
 
   def set_interrupting(self):
     with self._status_lock:
-      if self._interruption_status == InterruptionStatus.No:
-        self._interruption_status = InterruptionStatus.Interrupting
+      if self._interruption_status == InterruptionStatus.NO:
+        self._interruption_status = InterruptionStatus.INTERRUPTING
 
     self._emit_event({ "kind": "interrupting" })
 
   def set_interrupted(self):
     with self._status_lock:
-      self._interruption_status = InterruptionStatus.Interrupted
+      self._interruption_status = InterruptionStatus.INTERRUPTED
 
     self._emit_event({ "kind": "interrupted" })
 
