@@ -67,7 +67,7 @@ class ThreadPool(Generic[R]):
     self._interruption: Interruption = interruption
     self._lock: Lock = Lock()
     self._workers: list[_Worker] = []
-    self._waker: Waker[None | Callable[[], None]] = Waker()
+    self._waker: Waker[None | Callable[[], R]] = Waker()
     self._results_queue: _ResultsQueue[R] = _ResultsQueue()
 
   @property
@@ -149,7 +149,7 @@ class ThreadPool(Generic[R]):
     for worker in workers:
       worker.thread.join()
 
-  def execute(self, func: Callable[[], None]) -> None:
+  def execute(self, func: Callable[[], R]) -> None:
     self._results_queue.add_a_task()
     self._waker.push(func)
 
@@ -159,7 +159,7 @@ class ThreadPool(Generic[R]):
   def _run_in_background(self, worker: _Worker):
     with ThreadPoolContext():
       with self._interruption.context():
-        func: None | Callable[[], None] = None
+        func: None | Callable[[], R] = None
         while True:
           if worker.did_removed:
             break
